@@ -68,7 +68,7 @@ jobs:
         run: |
           cd "/opt/deepflow-singularity/$BRANCH"
           chmod +x scripts/deploy-nginx.sh
-          bash scripts/deploy-nginx.sh "$BRANCH"
+          sudo bash scripts/deploy-nginx.sh "$BRANCH"
 
       - name: Cleanup unused images
         run: docker image prune -f
