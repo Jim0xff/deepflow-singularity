@@ -41,10 +41,12 @@ jobs:
           set -e
           BASE_DIR="/opt/deepflow-singularity"
           TARGET="$BASE_DIR/$BRANCH"
+          REPO_URL="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
           if [ ! -d "$TARGET/.git" ]; then
-            git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$TARGET"
+            git clone "$REPO_URL" "$TARGET"
           fi
           cd "$TARGET"
+          git remote set-url origin "$REPO_URL"
           git fetch --all
           git reset --hard "origin/$BRANCH"
 
