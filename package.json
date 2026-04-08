@@ -1,0 +1,26 @@
+{
+  "name": "deepflow-singularity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx src/server.ts",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/recipe-smoke.test.mjs --runInBand --verbose"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "dotenv": "^17.3.1",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.15.18",
+    "jest": "^30.2.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,125 @@
+version: "1"
+name: "deepflow-singularity"
+
+params:
+  openclaw_version:
+    default: "2026.3.2"
+  agent_model:
+    default: "openai/gpt-5.3-codex"
+  singularity_main_telegram_bot_key:
+    required: false
+    default: ""
+  singularity_reviewer_telegram_bot_key:
+    required: false
+    default: ""
+  singularity_writer_telegram_bot_key:
+    required: false
+    default: ""
+  auth_choice:
+    default: "openai-api-key"
+  allowed_origin:
+    default: "http://deepflow.app"
+
+openclaw:
+  bin: "openclaw"
+  version: "${openclaw_version}"
+  commands:
+    enable_plugin: "openclaw plugins enable telegram"
+  config_patch:
+    tools:
+      profile: "coding"
+    gateway:
+      mode: "local"
+      http:
+        endpoints:
+          responses:
+            enabled: true
+      controlUi:
+        allowedOrigins:
+          - "${allowed_origin}"
+    channels:
+      telegram:
+        accounts:
+          singularity-main:
+            capabilities:
+              inlineButtons: "all"
+            dmPolicy: "pairing"
+            groupPolicy: "open"
+            streaming: "partial"
+            actions:
+              sendMessage: true
+          singularity-reviewer:
+            capabilities:
+              inlineButtons: "all"
+            dmPolicy: "pairing"
+            groupPolicy: "open"
+            streaming: "partial"
+            actions:
+              sendMessage: true
+          singularity-writer:
+            capabilities:
+              inlineButtons: "all"
+            dmPolicy: "pairing"
+            groupPolicy: "open"
+            streaming: "partial"
+            actions:
+              sendMessage: true
+  root:
+    assets: "./assets/root"
+    files:
+      - path: "openclaw.json"
+        content: |
+          {
+            "tools": {
+              "profile": "coding"
+            },
+            "gateway": {
+              "mode": "local",
+              "http": {
+                "endpoints": {
+                  "responses": {
+                    "enabled": true
+                  }
+                }
+              },
+              "controlUi": {
+                "allowedOrigins": ["${allowed_origin}"]
+              }
+            }
+          }
+  bootstrap:
+    auth_choice: "${auth_choice}"
+    llm_api_key: "${openai_api_key}"
+
+workspaces:
+  - name: "singularity-main"
+    assets: "./assets/singularity-main"
+  - name: "singularity-reviewer"
+    assets: "./assets/singularity-reviewer"
+  - name: "singularity-writer"
+    assets: "./assets/singularity-writer"
+
+agents:
+  - workspace: "singularity-main"
+    name: "singularity-main"
+    model: "${agent_model}"
+  - workspace: "singularity-reviewer"
+    name: "singularity-reviewer"
+    model: "${agent_model}"
+  - workspace: "singularity-writer"
+    name: "singularity-writer"
+    model: "${agent_model}"
+
+channels:
+  - channel: "telegram"
+    token: "${singularity_main_telegram_bot_key}"
+    agent: "singularity-main"
+    group_policy: "open"
+  - channel: "telegram"
+    token: "${singularity_reviewer_telegram_bot_key}"
+    agent: "singularity-reviewer"
+    group_policy: "open"
+  - channel: "telegram"
+    token: "${singularity_writer_telegram_bot_key}"
+    agent: "singularity-writer"
+    group_policy: "open"

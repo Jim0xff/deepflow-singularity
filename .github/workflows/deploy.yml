@@ -1,0 +1,75 @@
+name: Deploy Deepflow Singularity
+
+on:
+  push:
+    branches:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: true
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    concurrency:
+      group: deploy-singularity-${{ github.ref_name }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Determine branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BRANCH=${{ github.event.inputs.branch }}" >> $GITHUB_ENV
+          else
+            echo "BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+          fi
+
+      - name: Validate branch in config.yaml
+        run: |
+          set -e
+          CONFIG="/opt/deepflow-singularity-config/config.yaml"
+          if ! grep -q "^  $BRANCH:" "$CONFIG"; then
+            echo "Branch $BRANCH not declared in config.yaml"
+            exit 1
+          fi
+
+      - name: Prepare target directory
+        run: |
+          set -e
+          BASE_DIR="/opt/deepflow-singularity"
+          TARGET="$BASE_DIR/$BRANCH"
+          if [ ! -d "$TARGET/.git" ]; then
+            GIT_SSH_COMMAND="ssh -i /root/.ssh/deepflow_runner -o StrictHostKeyChecking=no" \
+            git clone "git@github.com:${{ github.repository }}.git" "$TARGET"
+          fi
+          cd "$TARGET"
+          git fetch --all
+          git reset --hard "origin/$BRANCH"
+
+      - name: Generate .env from YAML
+        run: |
+          set -e
+          CONFIG="/opt/deepflow-singularity-config/config.yaml"
+          TARGET="/opt/deepflow-singularity/$BRANCH"
+          PORT=$(yq -r ".environments[\"$BRANCH\"].port" "$CONFIG")
+          echo "APP_PORT=$PORT" > "$TARGET/.env"
+          yq -r '.base | to_entries[] | "\(.key)=\(.value)"' "$CONFIG" >> "$TARGET/.env"
+          yq -r ".environments[\"$BRANCH\"].env | to_entries[] | \"\\(.key)=\\(.value)\"" "$CONFIG" >> "$TARGET/.env"
+
+      - name: Deploy with Docker Compose
+        run: |
+          set -e
+          cd "/opt/deepflow-singularity/$BRANCH"
+          docker compose -p "deepflow-singularity-$BRANCH" up -d --build
+
+      - name: Generate nginx config
+        run: |
+          cd "/opt/deepflow-singularity/$BRANCH"
+          chmod +x scripts/deploy-nginx.sh
+          bash scripts/deploy-nginx.sh "$BRANCH"
+
+      - name: Cleanup unused images
+        run: docker image prune -f

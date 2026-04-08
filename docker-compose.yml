@@ -1,0 +1,16 @@
+services:
+  deepflow-singularity:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT}:3000"
+    env_file:
+      - .env
+    environment:
+      WEB_PORT: "3000"
+    volumes:
+      - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
+      - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared
+      - /root/deepflow-assets/codex:/root/.codex
