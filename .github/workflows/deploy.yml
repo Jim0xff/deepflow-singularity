@@ -42,8 +42,7 @@ jobs:
           BASE_DIR="/opt/deepflow-singularity"
           TARGET="$BASE_DIR/$BRANCH"
           if [ ! -d "$TARGET/.git" ]; then
-            GIT_SSH_COMMAND="ssh -i /root/.ssh/deepflow_runner -o StrictHostKeyChecking=no" \
-            git clone "git@github.com:${{ github.repository }}.git" "$TARGET"
+            git clone "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$TARGET"
           fi
           cd "$TARGET"
           git fetch --all
