@@ -64,7 +64,7 @@ jobs:
         run: |
           set -e
           cd "/opt/deepflow-singularity/$BRANCH"
-          docker compose -p "deepflow-singularity-$BRANCH" up -d --build
+          docker compose -p "$BRANCH" up -d --build
 
       - name: Generate nginx config
         run: |
