@@ -78,6 +78,7 @@ It expects a self-hosted GitHub Actions runner on the target host and uses:
 - nginx conf dir: `/etc/nginx/conf.d/deepflow-singularity`
 
 Each branch can map to its own domain/port/env block inside that YAML config.
+The `main` branch currently auto-deploys to `188.166.52.45`.
 
 ## Test
 
