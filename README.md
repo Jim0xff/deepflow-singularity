@@ -63,6 +63,7 @@ Optional deployment/runtime variables:
 - `AWS_SECRET_ACCESS_KEY`
 - `HOST_DEEPFLOW_ASSETS_DIR`
 - `HOST_OPENCLAW_DEV_SHARED_DIR`
+- `HOST_CODEX_DIR`
 
 ## Deployment
 
