@@ -17,6 +17,8 @@ It keeps the useful parts of the original Deepflow project:
 
 It intentionally removes the original product/frontend/backend/QA orchestration from the active configuration.
 
+For the imported singularity agents, the shared project state directory is mounted into the container at both `/tmp/openclaw-dev-shared` and `/.openclaw/shared` so the original SOP paths continue to work.
+
 ## Agent Asset Sources
 
 The current assets were seeded from local OpenClaw workspaces:

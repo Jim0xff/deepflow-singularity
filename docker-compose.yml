@@ -13,4 +13,5 @@ services:
     volumes:
       - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared
+      - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/.openclaw/shared
       - ${HOST_CODEX_DIR:-/tmp/deepflow-singularity-codex}:/root/.codex
