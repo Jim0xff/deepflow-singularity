@@ -14,8 +14,6 @@ import { createSpacesSyncService } from "./runtime/spaces-sync.js";
 const docsRoot = resolve(process.env.DOCS_ROOT ?? "/tmp/deepflow-assets/docs");
 const watchDir = resolve(process.env.WATCH_DIR ?? "/tmp/deepflow-assets");
 const syncedOpenclawAssetsDir = resolve(process.env.SYNCED_OPENCLAW_ASSETS_DIR ?? "/tmp/deepflow-assets/openclaw");
-const openclawHome = resolve(process.env.OPENCLAW_HOME ?? `${process.env.HOME ?? "/root"}/.openclaw`);
-const appAssetsRoot = resolve(process.cwd(), "assets");
 const spacesBucket = process.env.SPACES_BUCKET ?? "deepflow-test";
 const spacesPrefix = trimSlashes(process.env.SPACES_PREFIX ?? "deepflow-assets");
 const spacesEndpoint = process.env.SPACES_ENDPOINT ?? "https://ams3.digitaloceanspaces.com";
@@ -36,22 +34,15 @@ const supervisorIntervalMs = Number.parseInt(process.env.SINGULARITY_SUPERVISOR_
 const singularitySupervisorEnabled = process.env.SINGULARITY_SUPERVISOR_ENABLED !== "false";
 const docsAuthToken = process.env.DOCS_AUTH_TOKEN ?? "";
 const docsProjectAuthFileName = ".docs-auth.json";
-const workspaceNames = [
-  "singularity-main",
-  "singularity-reviewer",
-  "singularity-writer",
-] as const;
 
 let shuttingDown = false;
-
-const runCommand = createCommandRunner(awsRegion);
 
 const spacesSync = createSpacesSyncService({
   watchDir,
   spacesEndpoint,
   s3Uri: `s3://${spacesBucket}/${spacesPrefix}/`,
   syncDebounceMs,
-  runCommand,
+  runCommand: createCommandRunner(awsRegion),
 });
 
 const credentialsSync = createCredentialsSyncService({
@@ -101,9 +92,6 @@ async function main(): Promise<void> {
     await spacesSync.bootstrapFromS3();
     await credentialsSync.restoreFromSyncedAssets();
   }
-
-  await runCommand("clawchef", ["cook", ".", "-s", "--gateway-mode", "none"], "[openclaw] running clawchef cook");
-  await overlayWorkspaceAssets();
 
   credentialsSync.start();
   if (s3SyncEnabled) {
@@ -158,31 +146,6 @@ async function runNotifyIfConfigured(): Promise<void> {
 
 function trimSlashes(value: string): string {
   return value.replace(/^\/+/, "").replace(/\/+$/, "");
-}
-
-async function overlayWorkspaceAssets(): Promise<void> {
-  for (const workspaceName of workspaceNames) {
-    const assetDir = resolve(appAssetsRoot, workspaceName);
-    const workspaceDir = resolve(openclawHome, `workspace-${workspaceName}`);
-
-    try {
-      await fs.access(assetDir);
-      await fs.mkdir(workspaceDir, { recursive: true });
-      const entries = await fs.readdir(assetDir);
-
-      for (const entry of entries) {
-        await fs.cp(resolve(assetDir, entry), resolve(workspaceDir, entry), {
-          recursive: true,
-          force: true,
-          errorOnExist: false,
-        });
-      }
-
-      console.log(`[openclaw] workspace asset overlay applied: ${workspaceName}`);
-    } catch (error) {
-      console.warn(`[openclaw] workspace asset overlay skipped: ${workspaceName} (${String(error)})`);
-    }
-  }
 }
 
 void main().catch((error) => {
