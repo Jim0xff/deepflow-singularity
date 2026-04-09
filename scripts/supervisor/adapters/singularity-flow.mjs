@@ -20,8 +20,9 @@ const STEP_7_WRITER_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
   "Current step: step_7_drafting",
-  "Read project.md, status.md, handoff.md, output.md, and draft_review_history.md.",
-  "Draft or revise the article according to the latest handoff and review history.",
+  "Read project.md, status.md, handoff.md, interaction_log.md, materials.md, output.md, and draft_review_history.md.",
+  "Draft or revise the article according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
+  "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
   "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
 ].join("\n");
 
@@ -127,4 +128,3 @@ export async function tick(ctx) {
 
   return { delayMs: 15_000, runtimePatch: { last_decision: "unsupported_step" } };
 }
-
