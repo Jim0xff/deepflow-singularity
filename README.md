@@ -47,7 +47,7 @@ This will:
 - overlay `assets/singularity-*` into `~/.openclaw/workspace-singularity-*`
 - start `openclaw gateway`
 
-In Docker deployments, the container start script is responsible for OpenClaw runtime setup: it runs `clawchef cook`, overlays workspace assets into `/root/.openclaw/workspace-*`, starts `openclaw gateway`, and only then hands off long-running `server.js` supervision to `supervisord`. `server.ts` itself does not cook or launch gateway.
+In Docker deployments, the container start script is responsible for OpenClaw runtime setup: it runs `clawchef cook`, overlays workspace assets into `/root/.openclaw/workspace-*`, starts `openclaw gateway`, and only then hands off long-running `server.js` supervision to `supervisord`. `server.ts` itself does not cook or launch gateway. Only shared project data is bind-mounted; `/root/.openclaw` itself is left unmanaged so `clawchef cook` can rebuild it safely.
 
 ## Environment Variables
 
