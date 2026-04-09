@@ -104,6 +104,7 @@ The first adapter only automates:
 - `step_7_drafting` loop between `writer`, `reviewer`, and `main`
 
 The server also runs a lightweight manager that scans the shared projects root and ensures a supervisor is started for any project whose `status.md` is in `workflow_mode=auto` and currently at `step_5_debate` or `step_7_drafting`.
+The same manager also publishes `output.md` to docs-manager after `main` marks a human-approved article with `docs_publish_requested=yes`.
 
 ## Test
 

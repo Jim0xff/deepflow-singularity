@@ -169,10 +169,14 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               openclawCli: OPENCLAW_CLI,
             });
             dispatched = run.status === 0;
-            nextRuntime.last_dispatch_key = dispatchKey;
-            nextRuntime.last_dispatch_actor = actor;
-            nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
-            nextRuntime.last_dispatch_at = new Date().toISOString();
+            if (dispatched) {
+              nextRuntime.last_dispatch_key = dispatchKey;
+              nextRuntime.last_dispatch_actor = actor;
+              nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
+              nextRuntime.last_dispatch_at = new Date().toISOString();
+            } else {
+              nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+            }
             nextRuntime.last_dispatch_message = result.dispatch.message;
             nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
             nextRuntime.last_dispatch_stderr = String(run.stderr || "").trim();
@@ -270,4 +274,3 @@ main().catch((error) => {
   console.error(String(error?.stack || error || "supervisor_failed"));
   process.exit(1);
 });
-

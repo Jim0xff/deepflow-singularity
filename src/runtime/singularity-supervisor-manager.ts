@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import { promises as fs } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -12,6 +13,7 @@ type SingularitySupervisorManagerOptions = {
   projectsRoot: string;
   intervalMs: number;
   scriptPath?: string;
+  docsManagerPath?: string;
   logger?: Logger;
   readFile?: (filePath: string) => Promise<string | null>;
 };
@@ -33,6 +35,10 @@ export function createSingularitySupervisorManager(
 ): SingularitySupervisorManager {
   const logger = options.logger ?? defaultLogger;
   const scriptPath = resolve(options.scriptPath ?? join(process.cwd(), "scripts", "singularity-supervisor.mjs"));
+  const docsManagerPath = resolve(
+    options.docsManagerPath
+      ?? join(process.cwd(), "assets", "root", "skills", "docs-manager", "docs-manager-executor.mjs"),
+  );
   let timer: NodeJS.Timeout | null = null;
   const inFlight = new Set<string>();
 
@@ -65,6 +71,25 @@ export function createSingularitySupervisorManager(
       if (!content) continue;
 
       const status = parseStatusMd(content);
+      if (shouldPublishToDocs(status)) {
+        if (!inFlight.has(`${projectDir}:publish`)) {
+          inFlight.add(`${projectDir}:publish`);
+          try {
+            await publishFinalArticleToDocs({
+              docsManagerPath,
+              projectDir,
+              projectId: String(status.project_id || entry).trim() || entry,
+              logger,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error(`[singularity-publish] failed ${entry}: ${message}`);
+          } finally {
+            inFlight.delete(`${projectDir}:publish`);
+          }
+        }
+      }
+
       if (!shouldAutoSupervise(status)) continue;
       if (inFlight.has(projectDir)) continue;
 
@@ -113,6 +138,13 @@ function shouldAutoSupervise(status: Record<string, string>): boolean {
   return true;
 }
 
+function shouldPublishToDocs(status: Record<string, string>): boolean {
+  return (
+    String(status.docs_publish_requested || "").trim().toLowerCase() === "yes"
+    && String(status.docs_publish_state || "").trim().toLowerCase() !== "done"
+  );
+}
+
 function runSupervisorStart(scriptPath: string, projectDir: string): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [scriptPath, "start", "--project-dir", projectDir], {
@@ -131,3 +163,98 @@ function runSupervisorStart(scriptPath: string, projectDir: string): Promise<voi
   });
 }
 
+async function publishFinalArticleToDocs({
+  docsManagerPath,
+  projectDir,
+  projectId,
+  logger,
+}: {
+  docsManagerPath: string;
+  projectDir: string;
+  projectId: string;
+  logger: Logger;
+}): Promise<void> {
+  const statusPath = join(projectDir, "status.md");
+  const outputPath = join(projectDir, "output.md");
+  const article = await fs.readFile(outputPath, "utf8").catch(() => "");
+  if (!article.trim()) {
+    updateStatusMdAtomic(statusPath, {
+      docs_publish_state: "failed",
+      docs_publish_error: "output_md_empty",
+      updated_at: new Date().toISOString(),
+    });
+    throw new Error("output.md is empty");
+  }
+
+  const bindingId = `http:singularity-${projectId}`;
+  const targetPath = "05_delivery/final_article.md";
+
+  updateStatusMdAtomic(statusPath, {
+    docs_publish_state: "syncing",
+    docs_publish_error: "",
+    docs_publish_binding_id: bindingId,
+    docs_publish_path: targetPath,
+    updated_at: new Date().toISOString(),
+  });
+
+  await runDocsManager(docsManagerPath, ["--action", "bind", "--binding-id", bindingId, "--project-code", projectId]);
+  await runDocsManager(docsManagerPath, ["--action", "ensure", "--binding-id", bindingId, "--profile", "canonical-v1"]);
+  await runDocsManager(docsManagerPath, ["--action", "write", "--binding-id", bindingId, "--path", targetPath, "--content", article]);
+
+  updateStatusMdAtomic(statusPath, {
+    docs_publish_state: "done",
+    docs_publish_requested: "no",
+    docs_publish_error: "",
+    docs_publish_at: new Date().toISOString(),
+    docs_publish_binding_id: bindingId,
+    docs_publish_path: targetPath,
+    updated_at: new Date().toISOString(),
+  });
+  logger.info(`[singularity-publish] synced ${projectId} -> ${targetPath}`);
+}
+
+function runDocsManager(scriptPath: string, args: string[]): Promise<void> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(process.execPath, [scriptPath, ...args], { stdio: "ignore" });
+    child.on("error", rejectPromise);
+    child.on("exit", (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+      rejectPromise(new Error(`docs-manager failed code=${code ?? "null"} signal=${signal ?? "null"}`));
+    });
+  });
+}
+
+function updateStatusMdAtomic(statusPath: string, patch: Record<string, string>): void {
+  const text = readStatusSync(statusPath);
+  const lines = text.split("\n");
+  const order: string[] = [];
+  const map = new Map<string, string>();
+
+  for (const line of lines) {
+    const match = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!match) continue;
+    if (!map.has(match[1])) order.push(match[1]);
+    map.set(match[1], match[2]);
+  }
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (!map.has(key)) order.push(key);
+    map.set(key, value);
+  }
+
+  const next = `${order.map((key) => `${key}: ${map.get(key) ?? ""}`).join("\n")}\n`;
+  const tempPath = `${statusPath}.tmp`;
+  fsSync.writeFileSync(tempPath, next, "utf8");
+  fsSync.renameSync(tempPath, statusPath);
+}
+
+function readStatusSync(statusPath: string): string {
+  try {
+    return fsSync.readFileSync(statusPath, "utf8");
+  } catch {
+    return "";
+  }
+}

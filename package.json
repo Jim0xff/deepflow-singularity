@@ -8,7 +8,7 @@
     "start": "node dist/server.js",
     "dev": "node scripts/dev.mjs",
     "dev:server": "tsx src/server.ts",
-    "test": "npm run build && node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/recipe-smoke.test.mjs test/singularity-supervisor-adapter.test.mjs test/singularity-supervisor-manager.test.mjs --runInBand --verbose",
+    "test": "npm run build && node --experimental-vm-modules ./node_modules/jest/bin/jest.js test/recipe-smoke.test.mjs test/singularity-supervisor-adapter.test.mjs test/singularity-supervisor-manager.test.mjs test/supervisor-dispatch-dedupe.test.mjs --runInBand --verbose",
     "supervisor:singularity": "node scripts/singularity-supervisor.mjs"
   },
   "dependencies": {
