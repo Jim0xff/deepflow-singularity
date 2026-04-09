@@ -9,6 +9,7 @@ import { createCommandRunner } from "./runtime/command-runner.js";
 import { createCredentialsSyncService } from "./runtime/credentials-sync.js";
 import { runDeploymentNotify } from "./runtime/deployment-notify.js";
 import { createOpenclawGatewayService } from "./runtime/openclaw-gateway.js";
+import { createSingularitySupervisorManager } from "./runtime/singularity-supervisor-manager.js";
 import { createSpacesSyncService } from "./runtime/spaces-sync.js";
 
 const docsRoot = resolve(process.env.DOCS_ROOT ?? "/tmp/deepflow-assets/docs");
@@ -31,6 +32,9 @@ const copyIntervalMs = Number.parseInt(process.env.COPY_INTERVAL_SECONDS ?? "60"
 const syncDebounceMs = Number.parseInt(process.env.SYNC_DEBOUNCE_SECONDS ?? "2", 10) * 1000;
 const webPort = Number.parseInt(process.env.WEB_PORT ?? "3000", 10);
 const openclawGatewayUrl = process.env.OPENCLAW_GATEWAY_URL ?? "http://127.0.0.1:18789";
+const supervisorProjectsRoot = resolve(process.env.SINGULARITY_PROJECTS_ROOT ?? "/tmp/openclaw-dev-shared/projects");
+const supervisorIntervalMs = Number.parseInt(process.env.SINGULARITY_SUPERVISOR_INTERVAL_SECONDS ?? "15", 10) * 1000;
+const singularitySupervisorEnabled = process.env.SINGULARITY_SUPERVISOR_ENABLED !== "false";
 const docsAuthToken = process.env.DOCS_AUTH_TOKEN ?? "";
 const docsProjectAuthFileName = ".docs-auth.json";
 const workspaceNames = [
@@ -65,6 +69,11 @@ const credentialsSync = createCredentialsSyncService({
   credentialsTargetDir,
   credentialsRestoreSource,
   copyIntervalMs,
+});
+
+const singularitySupervisorManager = createSingularitySupervisorManager({
+  projectsRoot: supervisorProjectsRoot,
+  intervalMs: supervisorIntervalMs,
 });
 
 const app = createApp({
@@ -111,6 +120,10 @@ async function main(): Promise<void> {
   if (s3SyncEnabled) {
     spacesSync.startWatcher();
   }
+  if (singularitySupervisorEnabled) {
+    singularitySupervisorManager.start();
+    void singularitySupervisorManager.runNow();
+  }
 
   gateway.start();
   void runNotifyIfConfigured();
@@ -125,6 +138,7 @@ async function shutdown(server: ReturnType<typeof app.listen>): Promise<void> {
 
   credentialsSync.stop();
   await spacesSync.stopWatcher();
+  singularitySupervisorManager.stop();
   await gateway.stop();
 
   server.close(() => {

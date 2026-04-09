@@ -80,6 +80,31 @@ It expects a self-hosted GitHub Actions runner on the target host and uses:
 Each branch can map to its own domain/port/env block inside that YAML config.
 The `main` branch currently auto-deploys to `188.166.52.45`.
 
+## Supervisor
+
+A generic supervisor core now lives under:
+
+- `scripts/supervisor/core.mjs`
+- `scripts/supervisor/adapters/singularity-flow.mjs`
+
+The design is:
+
+- `core.mjs`: reusable start/watch runtime, PID handling, polling, dispatch dedupe
+- adapter: flow-specific state machine
+
+Start the singularity flow supervisor with:
+
+```bash
+npm run supervisor:singularity -- start --project-dir /.openclaw/shared/projects/<project_id>
+```
+
+The first adapter only automates:
+
+- `step_5_debate` handoff between `reviewer` and `main`
+- `step_7_drafting` loop between `writer`, `reviewer`, and `main`
+
+The server also runs a lightweight manager that scans the shared projects root and ensures a supervisor is started for any project whose `status.md` is in `workflow_mode=auto` and currently at `step_5_debate` or `step_7_drafting`.
+
 ## Test
 
 Run the current smoke test with:
