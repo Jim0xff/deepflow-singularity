@@ -12,6 +12,7 @@ services:
       WEB_PORT: "3000"
       OPENCLAW_GATEWAY_URL: "http://openclaw-gateway:18789"
     volumes:
+      - openclaw-home:/root/.openclaw
       - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/.openclaw/shared
@@ -28,7 +29,11 @@ services:
       - .env
     command: ["openclaw", "gateway", "run"]
     volumes:
+      - openclaw-home:/root/.openclaw
       - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/.openclaw/shared
       - ${HOST_CODEX_DIR:-/tmp/deepflow-singularity-codex}:/root/.codex
+
+volumes:
+  openclaw-home:
