@@ -1,0 +1,19 @@
+flowchart LR
+    A["Main enters Step 5"] --> B["status.md\ncurrent_step=step_5_debate\nworkflow_mode=auto\nnext_actor=reviewer\nawaiting_user_choice=no"]
+
+    B --> C["manager sees current project is auto step 5"]
+    C --> D["ensure supervisor watch process"]
+    D --> E["adapter decides: dispatch reviewer"]
+
+    E --> F["reviewer runs"]
+    F --> G["reviewer appends interaction_log.md\nand writes status.md:\nnext_actor=main\nawaiting_user_choice=yes"]
+
+    G --> H["adapter decides: dispatch main"]
+    H --> I["main posts debate result + numeric menu"]
+
+    I --> J{"user choice"}
+    J -->|continue debate| K["main writes status.md:\nnext_actor=reviewer\nawaiting_user_choice=no"]
+    K --> E
+
+    J -->|enter step 6| L["main writes status.md:\ncurrent_step=step_6_feedback\nworkflow_mode=manual"]
+    L --> M["supervisor exits on next loop"]

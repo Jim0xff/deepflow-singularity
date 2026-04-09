@@ -1,0 +1,10 @@
+flowchart LR
+    A["Reviewer approved"] --> B["Human says article OK / save result"]
+    B --> C["main writes status.md:\ndocs_publish_requested=yes\ndocs_publish_state=pending"]
+
+    C --> D["manager sees current project publish requested"]
+    D --> E["docs-manager bind\nhttp:singularity-project_id"]
+    E --> F["docs-manager ensure canonical-v1"]
+    F --> G["docs-manager write\n05_delivery/final_article.md\nfrom output.md"]
+
+    G --> H["manager writes status.md:\ndocs_publish_state=done\ndocs_publish_requested=no\ndocs_publish_path=05_delivery/final_article.md"]

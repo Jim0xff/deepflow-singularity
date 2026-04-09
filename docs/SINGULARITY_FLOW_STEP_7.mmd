@@ -1,0 +1,18 @@
+flowchart LR
+    A["Main enters Step 7"] --> B["status.md\ncurrent_step=step_7_drafting\nworkflow_mode=auto\nnext_actor=writer\nawaiting_user_choice=no"]
+
+    B --> C["manager sees current project is auto step 7"]
+    C --> D["ensure supervisor watch process"]
+    D --> E["adapter dispatches writer"]
+
+    E --> F["writer writes output.md +\ndraft_review_history.md\nand sets next_actor=reviewer"]
+    F --> G["adapter dispatches reviewer"]
+    G --> H["reviewer appends review\nand writes verdict-derived next_actor"]
+
+    H --> I{"verdict"}
+    I -->|changes_requested| J["status.md\nnext_actor=writer"]
+    J --> E
+
+    I -->|approved| K["status.md\nnext_actor=main"]
+    K --> L["adapter dispatches main"]
+    L --> M["main posts wrap-up / next menu"]

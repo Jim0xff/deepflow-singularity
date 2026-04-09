@@ -1,0 +1,88 @@
+flowchart TB
+    subgraph L0["Process Supervision"]
+      SD["supervisord\ninside container"]
+    end
+
+    subgraph L1["Service Process"]
+      SV["server.ts / dist/server.js"]
+      MG["singularity-supervisor-manager\n(timer in server)"]
+    end
+
+    subgraph L1B["Gateway Process"]
+      GW["openclaw-gateway\n(separate docker compose service)"]
+    end
+
+    subgraph L2["Project Auto Flow Process"]
+      SS["scripts/singularity-supervisor.mjs start"]
+      CW["supervisor core watch loop\n(single current-project process)"]
+      AD["singularity-flow adapter"]
+      RT["project/runtime/supervisor.json"]
+      PID["project/runtime/supervisor.pid"]
+    end
+
+    subgraph L3["Agents"]
+      M["singularity-main"]
+      R["singularity-reviewer"]
+      W["singularity-writer"]
+    end
+
+    subgraph L4["Project State"]
+      CP["CURRENT_PROJECT"]
+      ST["status.md"]
+      IL["interaction_log.md"]
+      HO["handoff.md"]
+      OUT["output.md"]
+      DR["draft_review_history.md"]
+    end
+
+    subgraph L5["Docs Manager"]
+      DM["docs-manager-executor.mjs"]
+      DOCS["docs project\n05_delivery/final_article.md"]
+    end
+
+    subgraph L6["User Interaction"]
+      U["User / Editor"]
+      TG["Telegram group"]
+    end
+
+    SD -->|autorestart server| SV
+    SV --> MG
+    SV -->|proxy + health check only| GW
+
+    MG -->|every 15s| CP
+    CP -->|resolve current project id| ST
+
+    MG -->|if current project\nworkflow_mode=auto\nand step=5 or 7| SS
+    SS -->|ensure one watcher for\ncurrent project| CW
+    CW --> RT
+    CW --> PID
+    CW --> ST
+    CW --> AD
+
+    AD -->|step_5 +\nnext_actor=reviewer| R
+    AD -->|step_5 +\nnext_actor=main\nand awaiting_user_choice=yes| M
+    AD -->|step_7 +\nnext_actor=writer| W
+    AD -->|step_7 +\nnext_actor=reviewer| R
+    AD -->|step_7 +\nnext_actor=main| M
+
+    U --> TG
+    TG --> M
+    TG --> R
+    TG --> W
+
+    M --> ST
+    M --> IL
+    M --> HO
+    M --> OUT
+
+    R --> ST
+    R --> IL
+    R --> DR
+
+    W --> ST
+    W --> OUT
+    W --> DR
+
+    MG -->|if docs_publish_requested=yes\nfor current project| DM
+    DM --> DOCS
+    DM -->|write publish result| ST

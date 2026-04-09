@@ -10,6 +10,23 @@ services:
       - .env
     environment:
       WEB_PORT: "3000"
+      OPENCLAW_GATEWAY_URL: "http://openclaw-gateway:18789"
+    volumes:
+      - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
+      - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared
+      - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/.openclaw/shared
+      - ${HOST_CODEX_DIR:-/tmp/deepflow-singularity-codex}:/root/.codex
+    depends_on:
+      - openclaw-gateway
+
+  openclaw-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["openclaw", "gateway", "run"]
     volumes:
       - ${HOST_DEEPFLOW_ASSETS_DIR:-/tmp/deepflow-assets}:/tmp/deepflow-assets
       - ${HOST_OPENCLAW_DEV_SHARED_DIR:-/tmp/openclaw-dev-shared}:/tmp/openclaw-dev-shared

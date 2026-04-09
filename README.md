@@ -47,6 +47,8 @@ This will:
 - overlay `assets/singularity-*` into `~/.openclaw/workspace-singularity-*`
 - start `openclaw gateway`
 
+In Docker deployments, `dist/server.js` is managed by `supervisord` inside the app container, while `openclaw gateway` runs as a separate Docker Compose service. Docker Compose still keeps both containers on `restart: unless-stopped`.
+
 ## Environment Variables
 
 Primary variables:

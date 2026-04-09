@@ -1,0 +1,8 @@
+flowchart LR
+    A["status.md changes to\nworkflow_mode!=auto"] --> D["supervisor watch loop sees\nstop condition"]
+    B["status.md\nstatus=exited/completed/archived"] --> D
+    C["status.md\ncurrent_step=exited/completed"] --> D
+
+    D --> E["write runtime/supervisor.json\nstate=exited"]
+    E --> F["clear supervisor.pid"]
+    F --> G["manager will not restart it\nunless current project\nre-enters auto step 5 or step 7"]

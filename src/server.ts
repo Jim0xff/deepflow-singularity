@@ -8,7 +8,6 @@ import { createApp } from "./app/create-app.js";
 import { createCommandRunner } from "./runtime/command-runner.js";
 import { createCredentialsSyncService } from "./runtime/credentials-sync.js";
 import { runDeploymentNotify } from "./runtime/deployment-notify.js";
-import { createOpenclawGatewayService } from "./runtime/openclaw-gateway.js";
 import { createSingularitySupervisorManager } from "./runtime/singularity-supervisor-manager.js";
 import { createSpacesSyncService } from "./runtime/spaces-sync.js";
 
@@ -47,15 +46,6 @@ let shuttingDown = false;
 
 const runCommand = createCommandRunner(awsRegion);
 
-const gateway = createOpenclawGatewayService({
-  openclawGatewayUrl,
-  onUnexpectedExit: (code) => {
-    if (!shuttingDown) {
-      process.exit(code ?? 1);
-    }
-  },
-});
-
 const spacesSync = createSpacesSyncService({
   watchDir,
   spacesEndpoint,
@@ -81,7 +71,6 @@ const app = createApp({
   openclawGatewayUrl,
   docsAuthToken,
   docsProjectAuthFileName,
-  isGatewayReady: () => gateway.isReady(),
 });
 
 async function main(): Promise<void> {
@@ -125,7 +114,6 @@ async function main(): Promise<void> {
     void singularitySupervisorManager.runNow();
   }
 
-  gateway.start();
   void runNotifyIfConfigured();
 }
 
@@ -139,7 +127,6 @@ async function shutdown(server: ReturnType<typeof app.listen>): Promise<void> {
   credentialsSync.stop();
   await spacesSync.stopWatcher();
   singularitySupervisorManager.stop();
-  await gateway.stop();
 
   server.close(() => {
     process.exit(0);

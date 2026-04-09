@@ -56,53 +56,46 @@ export function createSingularitySupervisorManager(
   }
 
   async function runNow(): Promise<void> {
-    let entries: Array<string> = [];
-    try {
-      entries = await fs.readdir(options.projectsRoot);
-    } catch {
-      return;
-    }
+    const current = await resolveCurrentProject(options.projectsRoot, readText);
+    if (!current) return;
 
-    for (const entry of entries) {
-      if (entry === "active" || entry === "CURRENT_PROJECT") continue;
-      const projectDir = join(options.projectsRoot, entry);
-      const statusPath = join(projectDir, "status.md");
-      const content = await readText(statusPath);
-      if (!content) continue;
+    const { projectId, projectDir } = current;
+    const statusPath = join(projectDir, "status.md");
+    const content = await readText(statusPath);
+    if (!content) return;
 
-      const status = parseStatusMd(content);
-      if (shouldPublishToDocs(status)) {
-        if (!inFlight.has(`${projectDir}:publish`)) {
-          inFlight.add(`${projectDir}:publish`);
-          try {
-            await publishFinalArticleToDocs({
-              docsManagerPath,
-              projectDir,
-              projectId: String(status.project_id || entry).trim() || entry,
-              logger,
-            });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            logger.error(`[singularity-publish] failed ${entry}: ${message}`);
-          } finally {
-            inFlight.delete(`${projectDir}:publish`);
-          }
+    const status = parseStatusMd(content);
+    if (shouldPublishToDocs(status)) {
+      if (!inFlight.has(`${projectDir}:publish`)) {
+        inFlight.add(`${projectDir}:publish`);
+        try {
+          await publishFinalArticleToDocs({
+            docsManagerPath,
+            projectDir,
+            projectId: String(status.project_id || projectId).trim() || projectId,
+            logger,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(`[singularity-publish] failed ${projectId}: ${message}`);
+        } finally {
+          inFlight.delete(`${projectDir}:publish`);
         }
       }
+    }
 
-      if (!shouldAutoSupervise(status)) continue;
-      if (inFlight.has(projectDir)) continue;
+    if (!shouldAutoSupervise(status)) return;
+    if (inFlight.has(projectDir)) return;
 
-      inFlight.add(projectDir);
-      try {
-        await runSupervisorStart(scriptPath, projectDir);
-        logger.info(`[singularity-supervisor] ensured ${entry}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error(`[singularity-supervisor] failed ${entry}: ${message}`);
-      } finally {
-        inFlight.delete(projectDir);
-      }
+    inFlight.add(projectDir);
+    try {
+      await runSupervisorStart(scriptPath, projectDir);
+      logger.info(`[singularity-supervisor] ensured ${projectId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[singularity-supervisor] failed ${projectId}: ${message}`);
+    } finally {
+      inFlight.delete(projectDir);
     }
   }
 
@@ -116,6 +109,19 @@ export function createSingularitySupervisorManager(
   }
 
   return { start, stop, runNow };
+}
+
+async function resolveCurrentProject(
+  projectsRoot: string,
+  readFile: (filePath: string) => Promise<string | null>,
+): Promise<{ projectId: string; projectDir: string } | null> {
+  const currentProjectPath = join(projectsRoot, "CURRENT_PROJECT");
+  const projectId = String((await readFile(currentProjectPath)) || "").trim();
+  if (!projectId) return null;
+  return {
+    projectId,
+    projectDir: join(projectsRoot, projectId),
+  };
 }
 
 function parseStatusMd(text: string): Record<string, string> {

@@ -8,7 +8,6 @@ type CreateAppOptions = {
   openclawGatewayUrl: string;
   docsAuthToken: string;
   docsProjectAuthFileName: string;
-  isGatewayReady: () => boolean;
 };
 
 export function createApp(options: CreateAppOptions): express.Application {
@@ -19,8 +18,8 @@ export function createApp(options: CreateAppOptions): express.Application {
     res.json({ ok: true });
   });
 
-  app.get("/openclaw-ready", (_req, res) => {
-    if (options.isGatewayReady()) {
+  app.get("/openclaw-ready", async (_req, res) => {
+    if (await isGatewayHealthy(options.openclawGatewayUrl)) {
       res.json({ ready: true });
       return;
     }
@@ -168,6 +167,15 @@ export function createApp(options: CreateAppOptions): express.Application {
   });
 
   return app;
+}
+
+async function isGatewayHealthy(openclawGatewayUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${openclawGatewayUrl.replace(/\/$/, "")}/health`, { method: "GET" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function renderDocsDirectory(relativePath: string, absolutePath: string): Promise<string> {
