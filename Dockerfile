@@ -9,6 +9,7 @@ RUN npm i -g clawchef openclaw@2026.3.2
 RUN npm i -g @openai/codex
 RUN npm install
 RUN npm run build
+RUN chmod +x /app/deploy/start-container.sh
 
 ENTRYPOINT ["tini", "--"]
-CMD ["supervisord", "-c", "/app/deploy/supervisord.conf"]
+CMD ["/app/deploy/start-container.sh"]
