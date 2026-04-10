@@ -5,6 +5,8 @@ const STEP_5_REVIEWER_MESSAGE = [
   "Read project.md, status.md, interaction_log.md, materials.md.",
   "Act as the reviewer for the current debate round.",
   "Append the full reviewer output to interaction_log.md.",
+  "Group reply must be the full counter-argument itself: Counter-Argument, Objections, Counter-Evidence, Limits, Open Questions.",
+  "Do not reply with a completion summary, file path, or write-status report.",
 ].join("\n");
 
 const STEP_5_MAIN_MESSAGE = [
@@ -12,8 +14,8 @@ const STEP_5_MAIN_MESSAGE = [
   "Project root: {{projectDir}}",
   "Current step: step_5_debate",
   "Read status.md.",
-  "Post only: current debate round completed.",
-  "Then show only this menu: 1) Continue one more Step 5 debate round. 2) Enter Step 6.",
+  "只回复：本轮对垒已完成。",
+  "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读。",
   "Do not summarize or repeat sentinel/reviewer arguments.",
 ].join("\n");
 
