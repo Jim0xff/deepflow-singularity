@@ -104,9 +104,11 @@ export function runOpenClawAgent({
   agentId,
   message,
   sessionId = "",
+  delivery = null,
   env = process.env,
   openclawNode,
   openclawCli,
+  spawnSyncImpl = spawnSync,
 }) {
   if (!openclawNode || !openclawCli) {
     return { status: 1, stdout: "", stderr: "openclaw_path_missing" };
@@ -116,8 +118,18 @@ export function runOpenClawAgent({
   if (sessionId) {
     args.push("--session-id", sessionId);
   }
+  if (delivery?.enabled) {
+    args.push("--deliver");
+    if (delivery.channel) args.push("--reply-channel", delivery.channel);
+    if (delivery.account) args.push("--reply-account", delivery.account);
+    if (delivery.to) args.push("--reply-to", delivery.to);
+  }
 
-  return spawnSync(openclawNode, args, { encoding: "utf8", env });
+  const childEnv = { ...env };
+  delete childEnv.OPENCLAW_GATEWAY_URL;
+  delete childEnv.CLAWDBOT_GATEWAY_URL;
+
+  return spawnSyncImpl(openclawNode, args, { encoding: "utf8", env: childEnv });
 }
 
 export function daemonizeWatch(commandArgs, { logPath, cwd = process.cwd() }) {
@@ -131,4 +143,3 @@ export function daemonizeWatch(commandArgs, { logPath, cwd = process.cwd() }) {
   fs.closeSync(out);
   return child;
 }
-

@@ -84,6 +84,30 @@ function buildAgentRuntime(args) {
   };
 }
 
+function resolveTelegramDelivery(projectDir) {
+  const projectId = path.basename(projectDir);
+  const activeDir = path.join(path.dirname(projectDir), "active");
+  let entries = [];
+  try {
+    entries = fs.readdirSync(activeDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".current")) continue;
+    const pointerPath = path.join(activeDir, entry.name);
+    if (readText(pointerPath).trim() !== projectId) continue;
+
+    const rawTarget = entry.name.slice(0, -".current".length);
+    const target = rawTarget.startsWith("telegram:") ? rawTarget.slice("telegram:".length) : rawTarget;
+    if (!target) continue;
+    return { enabled: true, channel: "telegram", to: target };
+  }
+
+  return null;
+}
+
 async function loadAdapter(adapterPath) {
   const resolved = path.isAbsolute(adapterPath) ? adapterPath : path.resolve(__dirname, adapterPath);
   const module = await import(pathToFileURL(resolved).href);
@@ -165,6 +189,10 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               agentId: agent.agentId,
               message: result.dispatch.message,
               sessionId: result.dispatch.sessionId || agent.sessionId,
+              delivery: {
+                ...resolveTelegramDelivery(projectDir),
+                account: agent.agentId,
+              },
               openclawNode: OPENCLAW_NODE,
               openclawCli: OPENCLAW_CLI,
             });
