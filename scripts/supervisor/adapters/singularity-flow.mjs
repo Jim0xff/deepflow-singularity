@@ -82,6 +82,15 @@ export async function tick(ctx) {
           key: `step5:${ctx.statusMtimeMs}:main:awaiting`,
           actor: "main",
           message: fill(STEP_5_MAIN_MESSAGE, ctx.projectDir),
+          afterStatusPatch: {
+            workflow_mode: "manual",
+            current_step: "step_5_debate",
+            next_actor: "main",
+            awaiting_user_choice: "yes",
+            active_menu_scope: "step_5_menu",
+            active_menu_options:
+              "1=WRITE_NEXT_SENTINEL_ONLY_AND_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK",
+          },
         },
       };
     }

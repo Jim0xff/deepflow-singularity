@@ -67,6 +67,13 @@ function shouldStop(status) {
   );
 }
 
+function stopReason(status) {
+  if (String(status.workflow_mode || "").trim() === "manual") return "manual";
+  if (["completed", "exited", "archived"].includes(String(status.status || "").trim())) return "project_closed";
+  if (["completed", "exited"].includes(String(status.current_step || "").trim())) return "step_closed";
+  return "";
+}
+
 function buildAgentRuntime(args) {
   return {
     main: {
@@ -202,6 +209,13 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               nextRuntime.last_dispatch_actor = actor;
               nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
               nextRuntime.last_dispatch_at = new Date().toISOString();
+              if (result.dispatch.afterStatusPatch) {
+                updateStatusMdAtomic(statusPath, {
+                  ...result.dispatch.afterStatusPatch,
+                  updated_at: new Date().toISOString(),
+                });
+                dispatched = false;
+              }
             } else {
               nextRuntime.last_dispatch_failed_at = new Date().toISOString();
             }
@@ -220,10 +234,12 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
     }
   } finally {
     const finalRuntime = readJson(runtimePath, {});
+    const finalStatus = parseStatusMd(readText(path.join(projectDir, "status.md")));
     writeJson(runtimePath, {
       ...finalRuntime,
       state: "exited",
       pid: null,
+      exit_reason: stopReason(finalStatus) || "watch_stopped",
       project_dir: projectDir,
       adapter: adapter.resolved,
       updated_at: new Date().toISOString(),
@@ -256,7 +272,8 @@ async function main() {
   }
 
   const existing = readJson(runtimePath, {});
-  if (pidAlive(existing.pid)) {
+  const pidMatch = `${__filename} watch --project-dir ${projectDir}`;
+  if (pidAlive(existing.pid, pidMatch)) {
     writeJson(runtimePath, {
       ...existing,
       state: "running",
@@ -266,6 +283,17 @@ async function main() {
     });
     console.log(JSON.stringify({ ok: true, reused: true, pid: existing.pid, projectDir }, null, 2));
     return;
+  }
+  if (existing.pid) {
+    writeJson(runtimePath, {
+      ...existing,
+      state: "stale",
+      pid: null,
+      project_dir: projectDir,
+      stale_pid: existing.pid,
+      updated_at: new Date().toISOString(),
+    });
+    if (fs.existsSync(pidPath)) fs.unlinkSync(pidPath);
   }
 
   const child = daemonizeWatch(

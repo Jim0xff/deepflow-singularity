@@ -77,15 +77,16 @@ export function fileMtimeMs(filePath) {
   }
 }
 
-export function pidAlive(pid) {
+export function pidAlive(pid, match = "") {
   const numericPid = Number(pid);
   if (!numericPid) return false;
   try {
     process.kill(numericPid, 0);
-    const stat = spawnSync("ps", ["-p", String(numericPid), "-o", "stat="], { encoding: "utf8" });
+    const stat = spawnSync("ps", ["-p", String(numericPid), "-o", "stat=", "-o", "args="], { encoding: "utf8" });
     if (stat.status !== 0) return false;
-    const state = String(stat.stdout || "").trim();
-    return Boolean(state) && !state.includes("Z");
+    const out = String(stat.stdout || "").trim();
+    if (!out || out.includes("Z")) return false;
+    return !match || out.includes(match);
   } catch {
     return false;
   }

@@ -31,6 +31,13 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("main");
     expect(result.dispatch.key).toBe("step5:101:main:awaiting");
+    expect(result.dispatch.afterStatusPatch).toMatchObject({
+      workflow_mode: "manual",
+      current_step: "step_5_debate",
+      next_actor: "main",
+      awaiting_user_choice: "yes",
+      active_menu_scope: "step_5_menu",
+    });
   });
 
   test("dispatches writer for step 7 drafting", async () => {
