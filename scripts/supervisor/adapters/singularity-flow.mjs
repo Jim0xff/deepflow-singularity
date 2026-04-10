@@ -11,10 +11,10 @@ const STEP_5_MAIN_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
   "Current step: step_5_debate",
-  "Read status.md and interaction_log.md.",
-  "Post the latest sentinel original text and reviewer original text from interaction_log.md.",
+  "Read status.md.",
+  "Post only: current debate round completed.",
   "Then show only this menu: 1) Continue one more Step 5 debate round. 2) Enter Step 6.",
-  "Do not omit the reviewer text. Do not show any menu before the reviewer round is present.",
+  "Do not summarize or repeat sentinel/reviewer arguments.",
 ].join("\n");
 
 const STEP_7_WRITER_MESSAGE = [
