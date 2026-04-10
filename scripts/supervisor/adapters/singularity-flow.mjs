@@ -12,8 +12,9 @@ const STEP_5_MAIN_MESSAGE = [
   "Project root: {{projectDir}}",
   "Current step: step_5_debate",
   "Read status.md and interaction_log.md.",
-  "Post the latest debate round to the group and show the step_5_menu.",
-  "Keep the reply user-facing and end with the current numeric menu.",
+  "Post the latest sentinel original text and reviewer original text from interaction_log.md.",
+  "Then show only this menu: 1) Continue one more Step 5 debate round. 2) Enter Step 6.",
+  "Do not omit the reviewer text. Do not show any menu before the reviewer round is present.",
 ].join("\n");
 
 const STEP_7_WRITER_MESSAGE = [
