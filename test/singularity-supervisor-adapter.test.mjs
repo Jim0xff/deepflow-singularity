@@ -53,6 +53,14 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("writer");
     expect(result.dispatch.key).toBe("step7:102:writer");
+    expect(result.dispatch.stripLegacyActionMenu).toBe(true);
+    expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["output.md", "draft_review_history.md"]);
+    expect(result.dispatch.afterSuccessPatch).toMatchObject({
+      workflow_mode: "auto",
+      current_step: "step_7_drafting",
+      next_actor: "reviewer",
+      awaiting_user_choice: "no",
+    });
   });
 
   test("returns step 7 to manual after main final menu", async () => {

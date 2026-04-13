@@ -133,6 +133,80 @@ export function runOpenClawAgent({
   return spawnSyncImpl(openclawNode, args, { encoding: "utf8", env: childEnv });
 }
 
+export function parseAgentPayloadTexts(stdout) {
+  try {
+    const parsed = JSON.parse(String(stdout || ""));
+    const payloads = parsed?.result?.payloads;
+    if (!Array.isArray(payloads)) return [];
+    return payloads.map((payload) => String(payload?.text || "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function stripLegacyActionMenu(text) {
+  return String(text || "")
+    .replace(
+      /\n+\s*1[).、]\s*你直接提修改意见[\s\S]*?4[).、]\s*你直接\s*@ORCHESTRATOR_BOT\s*结束项目\s*$/u,
+      "",
+    )
+    .trim();
+}
+
+export function chunkMessageText(text, maxChars = 3500) {
+  const value = String(text || "").trim();
+  if (!value) return [];
+  if (value.length <= maxChars) return [value];
+
+  const chunks = [];
+  let remaining = value;
+  while (remaining.length > maxChars) {
+    let cut = remaining.lastIndexOf("\n\n", maxChars);
+    if (cut < maxChars * 0.5) cut = remaining.lastIndexOf("\n", maxChars);
+    if (cut < maxChars * 0.5) cut = maxChars;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+export function sendOpenClawMessage({
+  account,
+  channel,
+  target,
+  message,
+  env = process.env,
+  openclawNode,
+  openclawCli,
+  spawnSyncImpl = spawnSync,
+}) {
+  if (!openclawNode || !openclawCli) {
+    return { status: 1, stdout: "", stderr: "openclaw_path_missing" };
+  }
+
+  const args = [
+    openclawCli,
+    "message",
+    "send",
+    "--channel",
+    channel,
+    "--account",
+    account,
+    "--target",
+    target,
+    "--message",
+    message,
+    "--json",
+  ];
+
+  const childEnv = { ...env };
+  delete childEnv.OPENCLAW_GATEWAY_URL;
+  delete childEnv.CLAWDBOT_GATEWAY_URL;
+
+  return spawnSyncImpl(openclawNode, args, { encoding: "utf8", env: childEnv });
+}
+
 export function daemonizeWatch(commandArgs, { logPath, cwd = process.cwd() }) {
   const out = fs.openSync(logPath, "a");
   const child = spawn(process.execPath, commandArgs, {

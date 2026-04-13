@@ -1,4 +1,10 @@
-import { runOpenClawAgent } from "../scripts/supervisor/lib.mjs";
+import {
+  chunkMessageText,
+  parseAgentPayloadTexts,
+  runOpenClawAgent,
+  sendOpenClawMessage,
+  stripLegacyActionMenu,
+} from "../scripts/supervisor/lib.mjs";
 
 describe("supervisor dispatch dedupe", () => {
   test("failed dispatch must not advance dedupe cursor", () => {
@@ -67,6 +73,67 @@ describe("supervisor dispatch dedupe", () => {
     ]);
     expect(call.options.env.OPENCLAW_GATEWAY_URL).toBeUndefined();
     expect(call.options.env.CLAWDBOT_GATEWAY_URL).toBeUndefined();
+    expect(call.options.env.KEEP_ME).toBe("yes");
+  });
+
+  test("extracts and cleans agent payloads for explicit delivery", () => {
+    const stdout = JSON.stringify({
+      result: {
+        payloads: [
+          {
+            text: [
+              "正文",
+              "",
+              "1) 你直接提修改意见，我继续改稿",
+              "2) 你直接 @REVIEWER_BOT 进行编审/反方审稿",
+              "3) 你直接 @ORCHESTRATOR_BOT 保存成果",
+              "4) 你直接 @ORCHESTRATOR_BOT 结束项目",
+            ].join("\n"),
+          },
+        ],
+      },
+    });
+
+    expect(parseAgentPayloadTexts(stdout)).toHaveLength(1);
+    expect(stripLegacyActionMenu(parseAgentPayloadTexts(stdout)[0])).toBe("正文");
+    expect(chunkMessageText("a".repeat(7200))).toHaveLength(3);
+  });
+
+  test("explicit message delivery uses openclaw message send", () => {
+    let call;
+    const run = sendOpenClawMessage({
+      account: "singularity-writer",
+      channel: "telegram",
+      target: "-1003539190038",
+      message: "draft",
+      openclawNode: "/node",
+      openclawCli: "/openclaw.mjs",
+      env: {
+        OPENCLAW_GATEWAY_URL: "http://127.0.0.1:18789",
+        KEEP_ME: "yes",
+      },
+      spawnSyncImpl: (command, args, options) => {
+        call = { command, args, options };
+        return { status: 0, stdout: "{}", stderr: "" };
+      },
+    });
+
+    expect(run.status).toBe(0);
+    expect(call.args).toEqual([
+      "/openclaw.mjs",
+      "message",
+      "send",
+      "--channel",
+      "telegram",
+      "--account",
+      "singularity-writer",
+      "--target",
+      "-1003539190038",
+      "--message",
+      "draft",
+      "--json",
+    ]);
+    expect(call.options.env.OPENCLAW_GATEWAY_URL).toBeUndefined();
     expect(call.options.env.KEEP_ME).toBe("yes");
   });
 });

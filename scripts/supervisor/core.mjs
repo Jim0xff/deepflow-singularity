@@ -8,11 +8,15 @@ import {
   ensureProjectDir,
   fileMtimeMs,
   parseStatusMd,
+  parseAgentPayloadTexts,
   pidAlive,
   readJson,
   readText,
   resolveExistingPath,
   runOpenClawAgent,
+  sendOpenClawMessage,
+  stripLegacyActionMenu,
+  chunkMessageText,
   updateStatusMdAtomic,
   writeJson,
 } from "./lib.mjs";
@@ -124,6 +128,57 @@ async function loadAdapter(adapterPath) {
   return { resolved, tick: module.tick };
 }
 
+function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
+  if (!delivery?.enabled) return;
+
+  const texts = parseAgentPayloadTexts(run.stdout);
+  const sent = [];
+  const failed = [];
+
+  for (const rawText of texts) {
+    const cleaned = dispatch.stripLegacyActionMenu ? stripLegacyActionMenu(rawText) : rawText.trim();
+    for (const chunk of chunkMessageText(cleaned)) {
+      const result = sendOpenClawMessage({
+        account: delivery.account || actor,
+        channel: delivery.channel,
+        target: delivery.to,
+        message: chunk,
+        openclawNode: OPENCLAW_NODE,
+        openclawCli: OPENCLAW_CLI,
+      });
+      const entry = {
+        status: result.status ?? 1,
+        stdout: String(result.stdout || "").trim(),
+        stderr: String(result.stderr || "").trim(),
+      };
+      if (entry.status === 0) {
+        sent.push(entry);
+      } else {
+        failed.push(entry);
+      }
+    }
+  }
+
+  nextRuntime.last_delivery_count = sent.length;
+  nextRuntime.last_delivery_failed_count = failed.length;
+  nextRuntime.last_delivery_at = sent.length ? new Date().toISOString() : "";
+  nextRuntime.last_delivery_error = failed.length ? failed.map((item) => item.stderr || item.stdout).join("\n") : "";
+}
+
+function snapshotRelativeFileMtimes(projectDir, relativePaths = []) {
+  const snapshot = {};
+  for (const relativePath of relativePaths) {
+    snapshot[relativePath] = fileMtimeMs(path.join(projectDir, relativePath));
+  }
+  return snapshot;
+}
+
+function hasChangedRelativeFile(projectDir, before = {}) {
+  return Object.entries(before).some(([relativePath, previousMtime]) => {
+    return fileMtimeMs(path.join(projectDir, relativePath)) > Number(previousMtime || 0);
+  });
+}
+
 async function runWatch({ projectDir, adapterPath, pollMs, args }) {
   const runtimeDir = path.join(projectDir, "runtime");
   const logPath = path.join(runtimeDir, "supervisor.log");
@@ -192,23 +247,44 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
           if (!agent?.agentId) {
             nextRuntime.last_error = `unknown_actor:${actor}`;
           } else {
+            const delivery = {
+              ...resolveTelegramDelivery(projectDir),
+              account: agent.agentId,
+            };
+            const successFileSnapshot = snapshotRelativeFileMtimes(
+              projectDir,
+              result.dispatch.afterSuccessWhenFilesChanged,
+            );
             const run = runOpenClawAgent({
               agentId: agent.agentId,
               message: result.dispatch.message,
               sessionId: result.dispatch.sessionId || agent.sessionId,
-              delivery: {
-                ...resolveTelegramDelivery(projectDir),
-                account: agent.agentId,
-              },
               openclawNode: OPENCLAW_NODE,
               openclawCli: OPENCLAW_CLI,
             });
             dispatched = run.status === 0;
             if (dispatched) {
+              deliverAgentPayloads({
+                delivery,
+                actor,
+                run,
+                dispatch: result.dispatch,
+                nextRuntime,
+              });
               nextRuntime.last_dispatch_key = dispatchKey;
               nextRuntime.last_dispatch_actor = actor;
               nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
               nextRuntime.last_dispatch_at = new Date().toISOString();
+              if (
+                result.dispatch.afterSuccessPatch &&
+                hasChangedRelativeFile(projectDir, successFileSnapshot)
+              ) {
+                updateStatusMdAtomic(statusPath, {
+                  ...result.dispatch.afterSuccessPatch,
+                  updated_at: new Date().toISOString(),
+                });
+                dispatched = false;
+              }
               if (result.dispatch.afterStatusPatch) {
                 updateStatusMdAtomic(statusPath, {
                   ...result.dispatch.afterStatusPatch,

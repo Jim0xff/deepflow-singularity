@@ -28,6 +28,7 @@ const STEP_7_WRITER_MESSAGE = [
   "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
   "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
   "Group reply must be the latest full draft itself, not a summary or file path.",
+  "Do not append any menu, bot handoff options, or @bot instructions.",
 ].join("\n");
 
 const STEP_7_REVIEWER_MESSAGE = [
@@ -109,6 +110,14 @@ export async function tick(ctx) {
           key: `step7:${ctx.statusMtimeMs}:writer`,
           actor: "writer",
           message: fill(STEP_7_WRITER_MESSAGE, ctx.projectDir),
+          stripLegacyActionMenu: true,
+          afterSuccessWhenFilesChanged: ["output.md", "draft_review_history.md"],
+          afterSuccessPatch: {
+            workflow_mode: "auto",
+            current_step: "step_7_drafting",
+            next_actor: "reviewer",
+            awaiting_user_choice: "no",
+          },
         },
       };
     }
