@@ -84,6 +84,24 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
+  test("step 7 reviewer delivers the review block and advances from latest verdict", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 105,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.deliverFromChangedFile).toBe("draft_review_history.md");
+    expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
+    expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["draft_review_history.md"]);
+    expect(result.dispatch.afterSuccessPatchFromLatestVerdict).toBe(true);
+  });
+
   test("waits when workflow mode is manual", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

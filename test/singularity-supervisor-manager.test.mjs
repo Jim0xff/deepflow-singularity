@@ -237,4 +237,58 @@ if (args.includes("--action write")) {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  test("unbinds completed projects and clears current pointers after publish is done", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-unbind-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-completed");
+    const activeDir = join(root, "active");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-completed\n", "utf8");
+    await writeFile(join(activeDir, "telegram:-100.current"), "project-completed\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      [
+        "project_id: demo-completed",
+        "status: completed",
+        "current_step: completed",
+        "docs_binding_state: bound",
+        "docs_publish_binding_id: http:singularity-demo-completed",
+        "docs_publish_requested: no",
+        "docs_publish_state: done",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--action unbind --binding-id http:singularity-demo-completed");
+
+    const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+    expect(statusText).toContain("docs_binding_state: unbound");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+
+    await rm(root, { recursive: true, force: true });
+  });
 });

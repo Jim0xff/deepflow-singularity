@@ -1,6 +1,7 @@
 import {
   chunkMessageText,
   parseAgentPayloadTexts,
+  parseLatestVerdict,
   runOpenClawAgent,
   sendOpenClawMessage,
   stripLegacyActionMenu,
@@ -135,5 +136,16 @@ describe("supervisor dispatch dedupe", () => {
     ]);
     expect(call.options.env.OPENCLAW_GATEWAY_URL).toBeUndefined();
     expect(call.options.env.KEEP_ME).toBe("yes");
+  });
+
+  test("parses latest reviewer verdict variants", () => {
+    expect(parseLatestVerdict("## review\nVerdict: approved")).toBe("approved");
+    expect(parseLatestVerdict("## review\nVERDICT_approved")).toBe("approved");
+    expect(parseLatestVerdict("## review\nverdict=changes_requested")).toBe("changes_requested");
+    expect(parseLatestVerdict("## review\n本轮审核通过")).toBe("approved");
+    expect(parseLatestVerdict("## review\n需要修改：结构问题")).toBe("changes_requested");
+    expect(parseLatestVerdict("## review\n未通过，需要修改")).toBe("changes_requested");
+    expect(parseLatestVerdict("## review\n不能通过，继续修改")).toBe("changes_requested");
+    expect(parseLatestVerdict("## review\n不可通过")).toBe("changes_requested");
   });
 });

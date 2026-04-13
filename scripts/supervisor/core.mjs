@@ -7,8 +7,10 @@ import {
   daemonizeWatch,
   ensureProjectDir,
   fileMtimeMs,
+  latestMarkdownBlock,
   parseStatusMd,
   parseAgentPayloadTexts,
+  parseLatestVerdict,
   pidAlive,
   readJson,
   readText,
@@ -131,7 +133,11 @@ async function loadAdapter(adapterPath) {
 function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
   if (!delivery?.enabled) return { ok: true, sent: 0, failed: 0 };
 
-  const texts = parseAgentPayloadTexts(run.stdout);
+  let texts = parseAgentPayloadTexts(run.stdout);
+  if (dispatch.deliverFromChangedFile) {
+    const block = latestMarkdownBlock(readText(path.join(dispatch.projectDir, dispatch.deliverFromChangedFile)));
+    if (block) texts = [block];
+  }
   const sent = [];
   const failed = [];
 
@@ -178,6 +184,23 @@ function hasChangedRelativeFile(projectDir, before = {}) {
   return Object.entries(before).some(([relativePath, previousMtime]) => {
     return fileMtimeMs(path.join(projectDir, relativePath)) > Number(previousMtime || 0);
   });
+}
+
+function verdictPatch(verdict) {
+  if (verdict === "approved") {
+    return {
+      workflow_mode: "auto",
+      current_step: "step_7_drafting",
+      next_actor: "main",
+      awaiting_user_choice: "no",
+    };
+  }
+  return {
+    workflow_mode: "auto",
+    current_step: "step_7_drafting",
+    next_actor: "writer",
+    awaiting_user_choice: "no",
+  };
 }
 
 async function runWatch({ projectDir, adapterPath, pollMs, args }) {
@@ -265,38 +288,61 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             });
             dispatched = run.status === 0;
             if (dispatched) {
-              const deliveryResult = deliverAgentPayloads({
-                delivery,
-                actor,
-                run,
-                dispatch: result.dispatch,
-                nextRuntime,
-              });
-              if (!deliveryResult.ok) {
+              const successFilesChanged = hasChangedRelativeFile(projectDir, successFileSnapshot);
+              if (result.dispatch.deliverRequiresChangedFile && !successFilesChanged) {
                 dispatched = false;
                 nextRuntime.last_dispatch_failed_at = new Date().toISOString();
-                nextRuntime.last_error = "delivery_failed";
+                nextRuntime.last_error = "expected_file_not_changed";
               } else {
-                nextRuntime.last_dispatch_key = dispatchKey;
-                nextRuntime.last_dispatch_actor = actor;
-                nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
-                nextRuntime.last_dispatch_at = new Date().toISOString();
-                if (
-                  result.dispatch.afterSuccessPatch &&
-                  hasChangedRelativeFile(projectDir, successFileSnapshot)
-                ) {
-                  updateStatusMdAtomic(statusPath, {
-                    ...result.dispatch.afterSuccessPatch,
-                    updated_at: new Date().toISOString(),
-                  });
+                const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
+                  ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
+                  : "";
+                if (result.dispatch.requireLatestVerdict && !parsedVerdict) {
                   dispatched = false;
-                }
-                if (result.dispatch.afterStatusPatch) {
-                  updateStatusMdAtomic(statusPath, {
-                    ...result.dispatch.afterStatusPatch,
-                    updated_at: new Date().toISOString(),
+                  nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                  nextRuntime.last_error = "latest_verdict_missing";
+                } else {
+                  const deliveryResult = deliverAgentPayloads({
+                    delivery,
+                    actor,
+                    run,
+                    dispatch: { ...result.dispatch, projectDir },
+                    nextRuntime,
                   });
-                  dispatched = false;
+                  if (!deliveryResult.ok) {
+                    dispatched = false;
+                    nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                    nextRuntime.last_error = "delivery_failed";
+                  } else {
+                    nextRuntime.last_dispatch_key = dispatchKey;
+                    nextRuntime.last_dispatch_actor = actor;
+                    nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
+                    nextRuntime.last_dispatch_at = new Date().toISOString();
+                    if (result.dispatch.afterSuccessPatch && successFilesChanged) {
+                      updateStatusMdAtomic(statusPath, {
+                        ...result.dispatch.afterSuccessPatch,
+                        updated_at: new Date().toISOString(),
+                      });
+                      dispatched = false;
+                    }
+                    if (result.dispatch.afterSuccessPatchFromLatestVerdict && successFilesChanged) {
+                      const patch = verdictPatch(parsedVerdict);
+                      if (patch) {
+                        updateStatusMdAtomic(statusPath, {
+                          ...patch,
+                          updated_at: new Date().toISOString(),
+                        });
+                        dispatched = false;
+                      }
+                    }
+                    if (result.dispatch.afterStatusPatch) {
+                      updateStatusMdAtomic(statusPath, {
+                        ...result.dispatch.afterStatusPatch,
+                        updated_at: new Date().toISOString(),
+                      });
+                      dispatched = false;
+                    }
+                  }
                 }
               }
             } else {

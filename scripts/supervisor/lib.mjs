@@ -171,6 +171,23 @@ export function chunkMessageText(text, maxChars = 3500) {
   return chunks;
 }
 
+export function latestMarkdownBlock(text) {
+  const value = String(text || "").trim();
+  const index = value.lastIndexOf("\n## ");
+  return (index >= 0 ? value.slice(index + 1) : value).trim();
+}
+
+export function parseLatestVerdict(text) {
+  const block = latestMarkdownBlock(text);
+  const explicit = block.match(/\bverdict\s*[:=_-]\s*(approved|changes_requested)\b/i);
+  if (explicit) return explicit[1].toLowerCase();
+  if (/(需要修改|需修改|要求修改|未通过|不通过|不能通过|不可通过|changes requested)/iu.test(block)) {
+    return "changes_requested";
+  }
+  if (/(审核|审稿|本轮)?\s*(已通过|审核通过|审稿通过|批准|可批准)/u.test(block)) return "approved";
+  return "";
+}
+
 export function sendOpenClawMessage({
   account,
   channel,

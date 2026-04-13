@@ -189,9 +189,13 @@ function shouldUnbindFromDocs(status: Record<string, string>): boolean {
   const projectStatus = String(status.status || "").trim();
   const currentStep = String(status.current_step || "").trim();
   const bindingState = String(status.docs_binding_state || "").trim().toLowerCase();
+  const publishRequested = String(status.docs_publish_requested || "").trim().toLowerCase() === "yes";
+  const publishState = String(status.docs_publish_state || "").trim().toLowerCase();
+  const closed = ["completed", "exited", "archived"].includes(projectStatus) || ["completed", "exited"].includes(currentStep);
+  if (publishRequested && publishState !== "done") return false;
   return (
     bindingState !== "unbound"
-    && (projectStatus === "exited" || currentStep === "exited")
+    && closed
   );
 }
 
@@ -352,6 +356,7 @@ async function unbindExitedProjectsFromDocs({
         docs_unbound_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
+      await clearProjectPointers(projectsRoot, entry.name);
       logger.info(`[singularity-publish] unbound ${bindingId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -362,6 +367,7 @@ async function unbindExitedProjectsFromDocs({
           docs_unbound_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
+        await clearProjectPointers(projectsRoot, entry.name);
         logger.info(`[singularity-publish] already unbound ${bindingId}`);
         continue;
       }
@@ -374,6 +380,26 @@ async function unbindExitedProjectsFromDocs({
       logger.error(`[singularity-publish] unbind failed ${bindingId}: ${message}`);
     }
   }
+}
+
+async function clearProjectPointers(projectsRoot: string, projectId: string): Promise<void> {
+  const currentProjectPath = join(projectsRoot, "CURRENT_PROJECT");
+  const current = await fs.readFile(currentProjectPath, "utf8").catch(() => "");
+  if (current.trim() === projectId) {
+    await fs.writeFile(currentProjectPath, "", "utf8").catch(() => undefined);
+  }
+
+  const activeDir = join(projectsRoot, "active");
+  const entries = await fs.readdir(activeDir, { withFileTypes: true }).catch(() => []);
+  await Promise.all(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".current"))
+    .map(async (entry) => {
+      const filePath = join(activeDir, entry.name);
+      const value = await fs.readFile(filePath, "utf8").catch(() => "");
+      if (value.trim() === projectId) {
+        await fs.writeFile(filePath, "", "utf8");
+      }
+    }));
 }
 
 function runDocsManager(scriptPath: string, args: string[]): Promise<void> {

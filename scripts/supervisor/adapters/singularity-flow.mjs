@@ -37,7 +37,8 @@ const STEP_7_REVIEWER_MESSAGE = [
   "Current step: step_7_drafting",
   "Read project.md, status.md, handoff.md, output.md, and draft_review_history.md.",
   "Review the latest draft.",
-  "Append the full review block to draft_review_history.md and set verdict to approved or changes_requested in your normal review format.",
+  "Append the full review block to draft_review_history.md; include one exact line: verdict=approved or verdict=changes_requested.",
+  "Group reply must be the full review block itself, not a completion summary, file path, or status update.",
 ].join("\n");
 
 const STEP_7_MAIN_MESSAGE = [
@@ -130,6 +131,11 @@ export async function tick(ctx) {
           key: `step7:${ctx.statusMtimeMs}:reviewer`,
           actor: "reviewer",
           message: fill(STEP_7_REVIEWER_MESSAGE, ctx.projectDir),
+          deliverFromChangedFile: "draft_review_history.md",
+          deliverRequiresChangedFile: true,
+          afterSuccessWhenFilesChanged: ["draft_review_history.md"],
+          afterSuccessPatchFromLatestVerdict: true,
+          requireLatestVerdict: true,
         },
       };
     }
