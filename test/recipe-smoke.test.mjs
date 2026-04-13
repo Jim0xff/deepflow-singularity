@@ -12,5 +12,6 @@ test("recipe scaffold files exist", async () => {
   await access(path.join(projectRoot, "assets", "singularity-main", "AGENTS.md"));
   await access(path.join(projectRoot, "assets", "singularity-reviewer", "AGENTS.md"));
   await access(path.join(projectRoot, "assets", "singularity-writer", "AGENTS.md"));
+  await access(path.join(projectRoot, "assets", "singularity-video", "AGENTS.md"));
   expect(true).toBe(true);
 });

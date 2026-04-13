@@ -98,6 +98,8 @@ workspaces:
     assets: "./assets/singularity-reviewer"
   - name: "singularity-writer"
     assets: "./assets/singularity-writer"
+  - name: "singularity-video"
+    assets: "./assets/singularity-video"
 
 agents:
   - workspace: "singularity-main"
@@ -108,6 +110,9 @@ agents:
     model: "${agent_model}"
   - workspace: "singularity-writer"
     name: "singularity-writer"
+    model: "${agent_model}"
+  - workspace: "singularity-video"
+    name: "singularity-video"
     model: "${agent_model}"
 
 channels:

@@ -14,6 +14,9 @@ type SingularitySupervisorManagerOptions = {
   intervalMs: number;
   scriptPath?: string;
   docsManagerPath?: string;
+  docsRoot?: string;
+  docsPublishNotifyAgentId?: string;
+  runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
   logger?: Logger;
   readFile?: (filePath: string) => Promise<string | null>;
 };
@@ -39,6 +42,7 @@ export function createSingularitySupervisorManager(
     options.docsManagerPath
       ?? join(process.cwd(), "assets", "root", "skills", "docs-manager", "docs-manager-executor.mjs"),
   );
+  const docsRoot = resolve(options.docsRoot ?? "/tmp/deepflow-assets/docs");
   let timer: NodeJS.Timeout | null = null;
   const inFlight = new Set<string>();
 
@@ -59,6 +63,9 @@ export function createSingularitySupervisorManager(
     await publishPendingProjectsToDocs({
       projectsRoot: options.projectsRoot,
       docsManagerPath,
+      docsRoot,
+      notifyAgentId: options.docsPublishNotifyAgentId,
+      runAgentCommand: options.runAgentCommand,
       inFlight,
       logger,
     });
@@ -127,11 +134,17 @@ export function createSingularitySupervisorManager(
 async function publishPendingProjectsToDocs({
   projectsRoot,
   docsManagerPath,
+  docsRoot,
+  notifyAgentId,
+  runAgentCommand,
   inFlight,
   logger,
 }: {
   projectsRoot: string;
   docsManagerPath: string;
+  docsRoot: string;
+  notifyAgentId?: string;
+  runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
   inFlight: Set<string>;
   logger: Logger;
 }): Promise<void> {
@@ -154,8 +167,11 @@ async function publishPendingProjectsToDocs({
     try {
       await publishFinalArticleToDocs({
         docsManagerPath,
+        docsRoot,
         projectDir,
         projectId,
+        notifyAgentId,
+        runAgentCommand,
         logger,
       });
     } catch (error) {
@@ -250,13 +266,19 @@ function runSupervisorStart(scriptPath: string, projectDir: string): Promise<voi
 
 async function publishFinalArticleToDocs({
   docsManagerPath,
+  docsRoot,
   projectDir,
   projectId,
+  notifyAgentId,
+  runAgentCommand,
   logger,
 }: {
   docsManagerPath: string;
+  docsRoot: string;
   projectDir: string;
   projectId: string;
+  notifyAgentId?: string;
+  runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
   logger: Logger;
 }): Promise<void> {
   const statusPath = join(projectDir, "status.md");
@@ -314,6 +336,37 @@ async function publishFinalArticleToDocs({
     updated_at: new Date().toISOString(),
   });
   logger.info(`[singularity-publish] synced ${projectId} -> ${targetPath}`);
+
+  if (notifyAgentId) {
+    const absolutePath = join(docsRoot, "projects", projectId, targetPath);
+    try {
+      await notifyDocsPublishAgent({
+        agentId: notifyAgentId,
+        projectId,
+        bindingId,
+        absolutePath,
+        relativePath: targetPath,
+        runAgentCommand,
+      });
+      updateStatusMdAtomic(statusPath, {
+        docs_publish_notify_state: "sent",
+        docs_publish_notify_agent: notifyAgentId,
+        docs_publish_notify_at: new Date().toISOString(),
+        docs_publish_notify_error: "",
+        updated_at: new Date().toISOString(),
+      });
+      logger.info(`[singularity-publish] notified ${notifyAgentId} ${absolutePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateStatusMdAtomic(statusPath, {
+        docs_publish_notify_state: "failed",
+        docs_publish_notify_agent: notifyAgentId,
+        docs_publish_notify_error: message,
+        updated_at: new Date().toISOString(),
+      });
+      logger.error(`[singularity-publish] notify failed ${notifyAgentId}: ${message}`);
+    }
+  }
 }
 
 async function ensureDocsBinding({
@@ -452,6 +505,100 @@ function runDocsManager(scriptPath: string, args: string[]): Promise<void> {
       );
     });
   });
+}
+
+function notifyDocsPublishAgent({
+  agentId,
+  projectId,
+  bindingId,
+  absolutePath,
+  relativePath,
+  runAgentCommand,
+}: {
+  agentId: string;
+  projectId: string;
+  bindingId: string;
+  absolutePath: string;
+  relativePath: string;
+  runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
+}): Promise<void> {
+  const sessionId = `docs-publish-${sanitizeSessionId(projectId)}-${sanitizeSessionId(agentId)}`;
+  const message = [
+    "Docs publish completed.",
+    `Project: ${projectId}`,
+    `Binding: ${bindingId}`,
+    `Final article absolute path: ${absolutePath}`,
+    `Relative path: ${relativePath}`,
+    "Read this file directly if you need the final article.",
+  ].join("\n");
+
+  if (runAgentCommand) {
+    return runAgentCommand(agentId, message, sessionId);
+  }
+  return runOpenClawAgent(agentId, message, sessionId);
+}
+
+function runOpenClawAgent(agentId: string, message: string, sessionId: string): Promise<void> {
+  const openclawNode = resolveExistingPath([
+    process.env.OPENCLAW_NODE,
+    "/usr/local/bin/node",
+    process.execPath,
+    "/root/.nvm/versions/node/v24.14.0/bin/node",
+  ]);
+  const openclawCli = resolveExistingPath([
+    process.env.OPENCLAW_CLI,
+    "/usr/local/lib/node_modules/openclaw/openclaw.mjs",
+    join(process.execPath ? resolve(process.execPath, "..") : "", "../lib/node_modules/openclaw/openclaw.mjs"),
+    "/root/.nvm/versions/node/v24.14.0/lib/node_modules/openclaw/openclaw.mjs",
+  ]);
+  if (!openclawNode || !openclawCli) {
+    return Promise.reject(new Error("openclaw_path_missing"));
+  }
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    const childEnv = { ...process.env };
+    delete childEnv.OPENCLAW_GATEWAY_URL;
+    delete childEnv.CLAWDBOT_GATEWAY_URL;
+
+    const child = spawn(openclawNode, [
+      openclawCli,
+      "agent",
+      "--agent",
+      agentId,
+      "--message",
+      message,
+      "--session-id",
+      sessionId,
+      "--json",
+    ], { stdio: ["ignore", "pipe", "pipe"], env: childEnv });
+
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", rejectPromise);
+    child.on("exit", (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+      rejectPromise(new Error(`openclaw agent failed code=${code ?? "null"} signal=${signal ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+    });
+  });
+}
+
+function resolveExistingPath(candidates: Array<string | undefined>): string | null {
+  for (const candidate of candidates) {
+    if (candidate && fsSync.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function sanitizeSessionId(value: string): string {
+  return value
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "") || "unknown";
 }
 
 function updateStatusMdAtomic(statusPath: string, patch: Record<string, string>): void {

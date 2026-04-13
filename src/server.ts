@@ -32,6 +32,7 @@ const openclawGatewayUrl = process.env.OPENCLAW_GATEWAY_URL ?? "http://127.0.0.1
 const supervisorProjectsRoot = resolve(process.env.SINGULARITY_PROJECTS_ROOT ?? "/tmp/openclaw-dev-shared/projects");
 const supervisorIntervalMs = Number.parseInt(process.env.SINGULARITY_SUPERVISOR_INTERVAL_SECONDS ?? "15", 10) * 1000;
 const singularitySupervisorEnabled = process.env.SINGULARITY_SUPERVISOR_ENABLED !== "false";
+const docsPublishNotifyAgentId = process.env.SINGULARITY_DOCS_PUBLISH_NOTIFY_AGENT_ID ?? "singularity-video";
 const docsAuthToken = process.env.DOCS_AUTH_TOKEN ?? "";
 const docsProjectAuthFileName = ".docs-auth.json";
 
@@ -55,6 +56,8 @@ const credentialsSync = createCredentialsSyncService({
 const singularitySupervisorManager = createSingularitySupervisorManager({
   projectsRoot: supervisorProjectsRoot,
   intervalMs: supervisorIntervalMs,
+  docsRoot,
+  docsPublishNotifyAgentId,
 });
 
 const app = createApp({
