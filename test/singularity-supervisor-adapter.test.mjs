@@ -55,6 +55,27 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.key).toBe("step7:102:writer");
   });
 
+  test("returns step 7 to manual after main final menu", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 104,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "main",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("main");
+    expect(result.dispatch.afterStatusPatch).toMatchObject({
+      workflow_mode: "manual",
+      current_step: "step_7_drafting",
+      next_actor: "main",
+      awaiting_user_choice: "yes",
+      active_menu_scope: "step_7_menu",
+    });
+  });
+
   test("waits when workflow mode is manual", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

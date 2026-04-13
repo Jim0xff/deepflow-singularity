@@ -27,6 +27,7 @@ const STEP_7_WRITER_MESSAGE = [
   "Draft or revise the article according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
   "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
   "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
+  "Group reply must be the latest full draft itself, not a summary or file path.",
 ].join("\n");
 
 const STEP_7_REVIEWER_MESSAGE = [
@@ -43,8 +44,9 @@ const STEP_7_MAIN_MESSAGE = [
   "Project root: {{projectDir}}",
   "Current step: step_7_drafting",
   "Read status.md, output.md, and draft_review_history.md.",
-  "If review is approved, post the latest draft summary and the next menu to the group.",
-  "Keep the reply user-facing and do not expose raw internal step codes.",
+  "只回复：成稿审核已通过，请确认下一步。",
+  "然后只显示这个菜单：1. 确认文章 OK 并成稿 2. 继续修改 3. 重新审稿。",
+  "Do not summarize the draft or expose raw internal step codes.",
 ].join("\n");
 
 function fill(template, projectDir) {
@@ -131,6 +133,15 @@ export async function tick(ctx) {
           key: `step7:${ctx.statusMtimeMs}:main`,
           actor: "main",
           message: fill(STEP_7_MAIN_MESSAGE, ctx.projectDir),
+          afterStatusPatch: {
+            workflow_mode: "manual",
+            current_step: "step_7_drafting",
+            next_actor: "main",
+            awaiting_user_choice: "yes",
+            active_menu_scope: "step_7_menu",
+            active_menu_options:
+              "1=CONFIRM_ARTICLE_OK_AND_FINALIZE;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no)",
+          },
         },
       };
     }

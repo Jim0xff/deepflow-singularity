@@ -56,6 +56,12 @@ export function createSingularitySupervisorManager(
   }
 
   async function runNow(): Promise<void> {
+    await unbindExitedProjectsFromDocs({
+      projectsRoot: options.projectsRoot,
+      docsManagerPath,
+      logger,
+    });
+
     const current = await resolveCurrentProject(options.projectsRoot, readText);
     if (!current) return;
 
@@ -65,6 +71,25 @@ export function createSingularitySupervisorManager(
     if (!content) return;
 
     const status = parseStatusMd(content);
+    if (shouldEnsureDocsBinding(status)) {
+      if (!inFlight.has(`${projectDir}:bind`)) {
+        inFlight.add(`${projectDir}:bind`);
+        try {
+          await ensureDocsBinding({
+            docsManagerPath,
+            projectDir,
+            projectId: String(status.project_id || projectId).trim() || projectId,
+            logger,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(`[singularity-publish] bind failed ${projectId}: ${message}`);
+        } finally {
+          inFlight.delete(`${projectDir}:bind`);
+        }
+      }
+    }
+
     if (shouldPublishToDocs(status)) {
       if (!inFlight.has(`${projectDir}:publish`)) {
         inFlight.add(`${projectDir}:publish`);
@@ -151,6 +176,25 @@ function shouldPublishToDocs(status: Record<string, string>): boolean {
   );
 }
 
+function shouldEnsureDocsBinding(status: Record<string, string>): boolean {
+  const projectStatus = String(status.status || "").trim();
+  const currentStep = String(status.current_step || "").trim();
+  const bindingState = String(status.docs_binding_state || "").trim().toLowerCase();
+  if (["completed", "exited", "archived"].includes(projectStatus)) return false;
+  if (["completed", "exited"].includes(currentStep)) return false;
+  return bindingState !== "bound";
+}
+
+function shouldUnbindFromDocs(status: Record<string, string>): boolean {
+  const projectStatus = String(status.status || "").trim();
+  const currentStep = String(status.current_step || "").trim();
+  const bindingState = String(status.docs_binding_state || "").trim().toLowerCase();
+  return (
+    bindingState !== "unbound"
+    && (projectStatus === "exited" || currentStep === "exited")
+  );
+}
+
 function runSupervisorStart(scriptPath: string, projectDir: string): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [scriptPath, "start", "--project-dir", projectDir], {
@@ -194,6 +238,7 @@ async function publishFinalArticleToDocs({
 
   const bindingId = `http:singularity-${projectId}`;
   const targetPath = "05_delivery/final_article.md";
+  const status = parseStatusMd(readStatusSync(statusPath));
 
   updateStatusMdAtomic(statusPath, {
     docs_publish_state: "syncing",
@@ -203,9 +248,24 @@ async function publishFinalArticleToDocs({
     updated_at: new Date().toISOString(),
   });
 
-  await runDocsManager(docsManagerPath, ["--action", "bind", "--binding-id", bindingId, "--project-code", projectId]);
-  await runDocsManager(docsManagerPath, ["--action", "ensure", "--binding-id", bindingId, "--profile", "canonical-v1"]);
-  await runDocsManager(docsManagerPath, ["--action", "write", "--binding-id", bindingId, "--path", targetPath, "--content", article]);
+  if (String(status.docs_binding_state || "").trim().toLowerCase() !== "bound") {
+    await bindAndEnsureDocsProject({ docsManagerPath, bindingId, projectId });
+  }
+
+  try {
+    await runDocsManager(docsManagerPath, ["--action", "write", "--binding-id", bindingId, "--path", targetPath, "--content", article]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("project is not bound")) throw error;
+
+    updateStatusMdAtomic(statusPath, {
+      docs_binding_state: "binding_repair",
+      docs_publish_error: "binding_missing_rebinding",
+      updated_at: new Date().toISOString(),
+    });
+    await bindAndEnsureDocsProject({ docsManagerPath, bindingId, projectId });
+    await runDocsManager(docsManagerPath, ["--action", "write", "--binding-id", bindingId, "--path", targetPath, "--content", article]);
+  }
 
   updateStatusMdAtomic(statusPath, {
     docs_publish_state: "done",
@@ -214,21 +274,125 @@ async function publishFinalArticleToDocs({
     docs_publish_at: new Date().toISOString(),
     docs_publish_binding_id: bindingId,
     docs_publish_path: targetPath,
+    docs_binding_state: "bound",
+    docs_bound_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
   logger.info(`[singularity-publish] synced ${projectId} -> ${targetPath}`);
 }
 
+async function ensureDocsBinding({
+  docsManagerPath,
+  projectDir,
+  projectId,
+  logger,
+}: {
+  docsManagerPath: string;
+  projectDir: string;
+  projectId: string;
+  logger: Logger;
+}): Promise<void> {
+  const statusPath = join(projectDir, "status.md");
+  const bindingId = `http:singularity-${projectId}`;
+
+  await bindAndEnsureDocsProject({ docsManagerPath, bindingId, projectId });
+
+  updateStatusMdAtomic(statusPath, {
+    docs_binding_state: "bound",
+    docs_publish_binding_id: bindingId,
+    docs_bound_at: new Date().toISOString(),
+    docs_publish_error: "",
+    updated_at: new Date().toISOString(),
+  });
+  logger.info(`[singularity-publish] bound ${projectId}`);
+}
+
+async function bindAndEnsureDocsProject({
+  docsManagerPath,
+  bindingId,
+  projectId,
+}: {
+  docsManagerPath: string;
+  bindingId: string;
+  projectId: string;
+}): Promise<void> {
+  await runDocsManager(docsManagerPath, ["--action", "bind", "--binding-id", bindingId, "--project-code", projectId]);
+  await runDocsManager(docsManagerPath, ["--action", "ensure", "--binding-id", bindingId, "--profile", "canonical-v1"]);
+}
+
+async function unbindExitedProjectsFromDocs({
+  projectsRoot,
+  docsManagerPath,
+  logger,
+}: {
+  projectsRoot: string;
+  docsManagerPath: string;
+  logger: Logger;
+}): Promise<void> {
+  const entries = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const projectDir = join(projectsRoot, entry.name);
+    const statusPath = join(projectDir, "status.md");
+    const statusText = await fs.readFile(statusPath, "utf8").catch(() => "");
+    if (!statusText) continue;
+
+    const status = parseStatusMd(statusText);
+    if (!shouldUnbindFromDocs(status)) continue;
+
+    const projectId = String(status.project_id || entry.name).trim() || entry.name;
+    const bindingId = String(status.docs_publish_binding_id || `http:singularity-${projectId}`).trim();
+
+    try {
+      await runDocsManager(docsManagerPath, ["--action", "unbind", "--binding-id", bindingId]);
+      updateStatusMdAtomic(statusPath, {
+        docs_binding_state: "unbound",
+        docs_publish_error: "",
+        docs_unbound_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      logger.info(`[singularity-publish] unbound ${bindingId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("project is not bound")) {
+        updateStatusMdAtomic(statusPath, {
+          docs_binding_state: "unbound",
+          docs_publish_error: "",
+          docs_unbound_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        logger.info(`[singularity-publish] already unbound ${bindingId}`);
+        continue;
+      }
+
+      updateStatusMdAtomic(statusPath, {
+        docs_binding_state: "unbind_failed",
+        docs_publish_error: message,
+        updated_at: new Date().toISOString(),
+      });
+      logger.error(`[singularity-publish] unbind failed ${bindingId}: ${message}`);
+    }
+  }
+}
+
 function runDocsManager(scriptPath: string, args: string[]): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(process.execPath, [scriptPath, ...args], { stdio: "ignore" });
+    const child = spawn(process.execPath, [scriptPath, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
     child.on("error", rejectPromise);
     child.on("exit", (code, signal) => {
       if (code === 0) {
         resolvePromise();
         return;
       }
-      rejectPromise(new Error(`docs-manager failed code=${code ?? "null"} signal=${signal ?? "null"}`));
+      const detail = stderr.trim();
+      rejectPromise(
+        new Error(`docs-manager failed code=${code ?? "null"} signal=${signal ?? "null"}${detail ? `: ${detail}` : ""}`),
+      );
     });
   });
 }
