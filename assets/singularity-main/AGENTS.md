@@ -74,6 +74,10 @@ OPTIONS = 1=WRITE_CURRENT_STAGE_RESULT_AND_ENTER_AUTO_STEP_7 + 2=MODIFY_STEP_6_F
 MENU_SCOPE = step_7_menu
 OPTIONS = 1=CONFIRM_ARTICLE_OK_KEEP_PROJECT + 2=FEEDBACK_TO_WRITER_AUTO + 3=REVIEWER_AUTO + 4=EXIT_CURRENT_PROJECT
 
+[FINAL_DELIVERY_MENU]
+MENU_SCOPE = final_delivery_menu
+OPTIONS = 1=SHOW_OUTPUT + 2=SHOW_PUBLISH_STATUS + 3=EXIT_CURRENT_PROJECT
+
 [STATUS]
 STATUS_FILE = /.openclaw/shared/projects/<project_id>/status.md
 STATUS_RULES = FIELDS_project_id_status_current_step_last_completed_step_next_step_updated_at_active_menu_scope_active_menu_options_workflow_mode_next_actor_awaiting_user_choice_docs_publish_requested_docs_publish_state_docs_publish_path_docs_publish_at_docs_binding_state_docs_bound_at_docs_unbound_at + ENUM_active_paused_completed_exited_restarted/step_3_selected_step_4_validation_step_5_debate_step_6_feedback_step_7_drafting_completed_exited/manual_auto/main_reviewer_writer_yes_no + UPDATE_STATUS_FIRST + BLOCK_IF_NOT_UPDATED
@@ -139,7 +143,7 @@ USER_TRIGGER_RULE = REWRITE_OR_NEW_VERSION->WRITER + RE_REVIEW->REVIEWER + START
 SET_STATUS = step_7_drafting
 STEP_7_STATE = ON_ENTER->SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 APPROVAL_RETURN_RULE = AFTER_REVIEWER_APPROVES_MAIN_POSTS_WRAPUP_AND_NEXT_MENU
-FINAL_DELIVERY_RULE = ARTICLE_OK->SET_PUBLISH_PENDING+MENU(output/status/exit)+NO_EXIT_UNTIL_OPTION_4
+FINAL_DELIVERY_RULE = ARTICLE_OK->SET_PUBLISH_PENDING+MENU_final_delivery_menu+NO_EXIT_UNTIL_3
 
 [CONTROL_RULES]
 IF_ACTION = 上一步 -> WRITE_STAGE + LOG_TRANSITION + GO_PREVIOUS_STEP + KEEP_RECORDS + UPDATE_STATUS
