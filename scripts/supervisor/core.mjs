@@ -129,7 +129,7 @@ async function loadAdapter(adapterPath) {
 }
 
 function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
-  if (!delivery?.enabled) return;
+  if (!delivery?.enabled) return { ok: true, sent: 0, failed: 0 };
 
   const texts = parseAgentPayloadTexts(run.stdout);
   const sent = [];
@@ -163,6 +163,7 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
   nextRuntime.last_delivery_failed_count = failed.length;
   nextRuntime.last_delivery_at = sent.length ? new Date().toISOString() : "";
   nextRuntime.last_delivery_error = failed.length ? failed.map((item) => item.stderr || item.stdout).join("\n") : "";
+  return { ok: failed.length === 0, sent: sent.length, failed: failed.length };
 }
 
 function snapshotRelativeFileMtimes(projectDir, relativePaths = []) {
@@ -264,33 +265,39 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             });
             dispatched = run.status === 0;
             if (dispatched) {
-              deliverAgentPayloads({
+              const deliveryResult = deliverAgentPayloads({
                 delivery,
                 actor,
                 run,
                 dispatch: result.dispatch,
                 nextRuntime,
               });
-              nextRuntime.last_dispatch_key = dispatchKey;
-              nextRuntime.last_dispatch_actor = actor;
-              nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
-              nextRuntime.last_dispatch_at = new Date().toISOString();
-              if (
-                result.dispatch.afterSuccessPatch &&
-                hasChangedRelativeFile(projectDir, successFileSnapshot)
-              ) {
-                updateStatusMdAtomic(statusPath, {
-                  ...result.dispatch.afterSuccessPatch,
-                  updated_at: new Date().toISOString(),
-                });
+              if (!deliveryResult.ok) {
                 dispatched = false;
-              }
-              if (result.dispatch.afterStatusPatch) {
-                updateStatusMdAtomic(statusPath, {
-                  ...result.dispatch.afterStatusPatch,
-                  updated_at: new Date().toISOString(),
-                });
-                dispatched = false;
+                nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                nextRuntime.last_error = "delivery_failed";
+              } else {
+                nextRuntime.last_dispatch_key = dispatchKey;
+                nextRuntime.last_dispatch_actor = actor;
+                nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
+                nextRuntime.last_dispatch_at = new Date().toISOString();
+                if (
+                  result.dispatch.afterSuccessPatch &&
+                  hasChangedRelativeFile(projectDir, successFileSnapshot)
+                ) {
+                  updateStatusMdAtomic(statusPath, {
+                    ...result.dispatch.afterSuccessPatch,
+                    updated_at: new Date().toISOString(),
+                  });
+                  dispatched = false;
+                }
+                if (result.dispatch.afterStatusPatch) {
+                  updateStatusMdAtomic(statusPath, {
+                    ...result.dispatch.afterStatusPatch,
+                    updated_at: new Date().toISOString(),
+                  });
+                  dispatched = false;
+                }
               }
             } else {
               nextRuntime.last_dispatch_failed_at = new Date().toISOString();
