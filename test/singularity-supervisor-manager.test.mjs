@@ -291,4 +291,112 @@ if (args.includes("--action write")) {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  test("publishes completed pending projects before unbinding and clearing pointers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-publish-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-completed-pending");
+    const activeDir = join(root, "active");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-completed-pending\n", "utf8");
+    await writeFile(join(activeDir, "telegram:-100.current"), "project-completed-pending\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      [
+        "project_id: demo-completed-pending",
+        "status: completed",
+        "current_step: completed",
+        "docs_binding_state: bound",
+        "docs_publish_binding_id: http:singularity-demo-completed-pending",
+        "docs_publish_requested: yes",
+        "docs_publish_state: pending",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "output.md"), "completed final article", "utf8");
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain("--action write --binding-id http:singularity-demo-completed-pending --path 05_delivery/final_article.md --content completed final article");
+    expect(calls[1]).toContain("--action unbind --binding-id http:singularity-demo-completed-pending");
+
+    const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+    expect(statusText).toContain("docs_publish_state: done");
+    expect(statusText).toContain("docs_publish_requested: no");
+    expect(statusText).toContain("docs_binding_state: unbound");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("dedupes concurrent pending publish scans", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-publish-inflight-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-pending");
+
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-pending\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      [
+        "project_id: demo-pending",
+        "status: active",
+        "current_step: step_7_drafting",
+        "docs_binding_state: bound",
+        "docs_publish_binding_id: http:singularity-demo-pending",
+        "docs_publish_requested: yes",
+        "docs_publish_state: pending",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "output.md"), "pending final article", "utf8");
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";
+await new Promise((resolve) => setTimeout(resolve, 150));
+appendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");
+`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await Promise.all([manager.runNow(), manager.runNow()]);
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--action write --binding-id http:singularity-demo-pending");
+
+    await rm(root, { recursive: true, force: true });
+  });
 });

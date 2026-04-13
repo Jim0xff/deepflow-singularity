@@ -47,7 +47,7 @@ const STEP_7_MAIN_MESSAGE = [
   "Current step: step_7_drafting",
   "Read status.md, output.md, and draft_review_history.md.",
   "只回复：成稿审核已通过，请确认下一步。",
-  "然后只显示这个菜单：1. 确认文章 OK 并成稿 2. 继续修改 3. 重新审稿。",
+  "然后只显示这个菜单：1. 确认文章 OK 2. 继续修改 3. 重新审稿 4. 退出当前项目。",
   "Do not summarize the draft or expose raw internal step codes.",
 ].join("\n");
 
@@ -155,7 +155,7 @@ export async function tick(ctx) {
             awaiting_user_choice: "yes",
             active_menu_scope: "step_7_menu",
             active_menu_options:
-              "1=CONFIRM_ARTICLE_OK_AND_FINALIZE;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no)",
+              "1=CONFIRM_ARTICLE_OK_KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);4=EXIT_CURRENT_PROJECT",
           },
         },
       };

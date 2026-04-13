@@ -56,6 +56,13 @@ export function createSingularitySupervisorManager(
   }
 
   async function runNow(): Promise<void> {
+    await publishPendingProjectsToDocs({
+      projectsRoot: options.projectsRoot,
+      docsManagerPath,
+      inFlight,
+      logger,
+    });
+
     await unbindExitedProjectsFromDocs({
       projectsRoot: options.projectsRoot,
       docsManagerPath,
@@ -90,25 +97,6 @@ export function createSingularitySupervisorManager(
       }
     }
 
-    if (shouldPublishToDocs(status)) {
-      if (!inFlight.has(`${projectDir}:publish`)) {
-        inFlight.add(`${projectDir}:publish`);
-        try {
-          await publishFinalArticleToDocs({
-            docsManagerPath,
-            projectDir,
-            projectId: String(status.project_id || projectId).trim() || projectId,
-            logger,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          logger.error(`[singularity-publish] failed ${projectId}: ${message}`);
-        } finally {
-          inFlight.delete(`${projectDir}:publish`);
-        }
-      }
-    }
-
     if (!shouldAutoSupervise(status)) return;
     if (inFlight.has(projectDir)) return;
 
@@ -134,6 +122,49 @@ export function createSingularitySupervisorManager(
   }
 
   return { start, stop, runNow };
+}
+
+async function publishPendingProjectsToDocs({
+  projectsRoot,
+  docsManagerPath,
+  inFlight,
+  logger,
+}: {
+  projectsRoot: string;
+  docsManagerPath: string;
+  inFlight: Set<string>;
+  logger: Logger;
+}): Promise<void> {
+  const entries = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const projectDir = join(projectsRoot, entry.name);
+    const statusPath = join(projectDir, "status.md");
+    const statusText = await fs.readFile(statusPath, "utf8").catch(() => "");
+    if (!statusText) continue;
+
+    const status = parseStatusMd(statusText);
+    if (!shouldPublishToDocs(status)) continue;
+
+    const projectId = String(status.project_id || entry.name).trim() || entry.name;
+    const publishKey = `${projectDir}:publish`;
+    if (inFlight.has(publishKey)) continue;
+    inFlight.add(publishKey);
+    try {
+      await publishFinalArticleToDocs({
+        docsManagerPath,
+        projectDir,
+        projectId,
+        logger,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[singularity-publish] failed ${projectId}: ${message}`);
+    } finally {
+      inFlight.delete(publishKey);
+    }
+  }
 }
 
 async function resolveCurrentProject(

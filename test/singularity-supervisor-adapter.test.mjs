@@ -82,6 +82,9 @@ describe("singularity supervisor adapter", () => {
       awaiting_user_choice: "yes",
       active_menu_scope: "step_7_menu",
     });
+    expect(result.dispatch.message).toContain("4. 退出当前项目");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=CONFIRM_ARTICLE_OK_KEEP_PROJECT");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("4=EXIT_CURRENT_PROJECT");
   });
 
   test("step 7 reviewer delivers the review block and advances from latest verdict", async () => {
