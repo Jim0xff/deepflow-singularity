@@ -125,8 +125,7 @@ describe("singularity supervisor manager", () => {
     expect(notifications).toHaveLength(1);
     expect(notifications[0].agentId).toBe("singularity-video");
     expect(notifications[0].sessionId).toBe("docs-publish-demo-notify-singularity-video");
-    expect(notifications[0].message).toContain("Final article absolute path:");
-    expect(notifications[0].message).toContain(join(docsRoot, "projects", "demo-notify", "05_delivery/final_article.md"));
+    expect(notifications[0].message).toBe(`/handle ${join(docsRoot, "projects", "demo-notify", "05_delivery/final_article.md")}`);
 
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_publish_state: done");

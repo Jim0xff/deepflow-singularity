@@ -343,9 +343,7 @@ async function publishFinalArticleToDocs({
       await notifyDocsPublishAgent({
         agentId: notifyAgentId,
         projectId,
-        bindingId,
         absolutePath,
-        relativePath: targetPath,
         runAgentCommand,
       });
       updateStatusMdAtomic(statusPath, {
@@ -510,27 +508,16 @@ function runDocsManager(scriptPath: string, args: string[]): Promise<void> {
 function notifyDocsPublishAgent({
   agentId,
   projectId,
-  bindingId,
   absolutePath,
-  relativePath,
   runAgentCommand,
 }: {
   agentId: string;
   projectId: string;
-  bindingId: string;
   absolutePath: string;
-  relativePath: string;
   runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
 }): Promise<void> {
   const sessionId = `docs-publish-${sanitizeSessionId(projectId)}-${sanitizeSessionId(agentId)}`;
-  const message = [
-    "Docs publish completed.",
-    `Project: ${projectId}`,
-    `Binding: ${bindingId}`,
-    `Final article absolute path: ${absolutePath}`,
-    `Relative path: ${relativePath}`,
-    "Read this file directly if you need the final article.",
-  ].join("\n");
+  const message = `/handle ${absolutePath}`;
 
   if (runAgentCommand) {
     return runAgentCommand(agentId, message, sessionId);
