@@ -338,7 +338,7 @@ async function publishFinalArticleToDocs({
   if (notifyAgentId) {
     const absolutePath = join(docsRoot, "projects", projectId, targetPath);
     const chatId = await resolveProjectChatId(projectsRoot, projectId);
-    const notifyTarget = chatId ? `${chatId} ${absolutePath}` : absolutePath;
+    const notifyTarget = chatId ? `tg:${chatId} path:${absolutePath}` : `path:${absolutePath}`;
     try {
       await notifyDocsPublishAgent({
         agentId: notifyAgentId,
@@ -503,7 +503,7 @@ function notifyDocsPublishAgent({
   runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
 }): Promise<void> {
   const sessionId = `docs-publish-${sanitizeSessionId(projectId)}-${sanitizeSessionId(agentId)}`;
-  const message = chatId ? `/handle ${chatId} ${absolutePath}` : `/handle ${absolutePath}`;
+  const message = chatId ? `/handle tg:${chatId} path:${absolutePath}` : `/handle path:${absolutePath}`;
 
   if (runAgentCommand) {
     return runAgentCommand(agentId, message, sessionId);
