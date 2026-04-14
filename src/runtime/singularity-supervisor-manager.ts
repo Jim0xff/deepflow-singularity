@@ -167,6 +167,7 @@ async function publishPendingProjectsToDocs({
       await publishFinalArticleToDocs({
         docsManagerPath,
         docsRoot,
+        projectsRoot,
         projectDir,
         projectId,
         notifyAgentId,
@@ -262,6 +263,7 @@ function runSupervisorStart(scriptPath: string, projectDir: string): Promise<voi
 async function publishFinalArticleToDocs({
   docsManagerPath,
   docsRoot,
+  projectsRoot,
   projectDir,
   projectId,
   notifyAgentId,
@@ -270,6 +272,7 @@ async function publishFinalArticleToDocs({
 }: {
   docsManagerPath: string;
   docsRoot: string;
+  projectsRoot: string;
   projectDir: string;
   projectId: string;
   notifyAgentId?: string;
@@ -334,11 +337,14 @@ async function publishFinalArticleToDocs({
 
   if (notifyAgentId) {
     const absolutePath = join(docsRoot, "projects", projectId, targetPath);
+    const chatId = await resolveProjectChatId(projectsRoot, projectId);
+    const notifyTarget = chatId ? `${chatId} ${absolutePath}` : absolutePath;
     try {
       await notifyDocsPublishAgent({
         agentId: notifyAgentId,
         projectId,
         absolutePath,
+        chatId,
         runAgentCommand,
       });
       updateStatusMdAtomic(statusPath, {
@@ -348,7 +354,7 @@ async function publishFinalArticleToDocs({
         docs_publish_notify_error: "",
         updated_at: new Date().toISOString(),
       });
-      logger.info(`[singularity-publish] notified ${notifyAgentId} ${absolutePath}`);
+      logger.info(`[singularity-publish] notified ${notifyAgentId} /handle ${notifyTarget}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       updateStatusMdAtomic(statusPath, {
@@ -447,6 +453,21 @@ async function clearProjectPointers(projectsRoot: string, projectId: string): Pr
     }));
 }
 
+async function resolveProjectChatId(projectsRoot: string, projectId: string): Promise<string> {
+  const activeDir = join(projectsRoot, "active");
+  const entries = await fs.readdir(activeDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".current")) continue;
+    const filePath = join(activeDir, entry.name);
+    const value = await fs.readFile(filePath, "utf8").catch(() => "");
+    if (value.trim() !== projectId) continue;
+    const raw = entry.name.slice(0, -".current".length);
+    const chatId = raw.startsWith("telegram:") ? raw.slice("telegram:".length) : raw;
+    if (chatId) return chatId;
+  }
+  return "";
+}
+
 function runDocsManager(scriptPath: string, args: string[]): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [scriptPath, ...args], { stdio: ["ignore", "pipe", "pipe"] });
@@ -472,15 +493,17 @@ function notifyDocsPublishAgent({
   agentId,
   projectId,
   absolutePath,
+  chatId,
   runAgentCommand,
 }: {
   agentId: string;
   projectId: string;
   absolutePath: string;
+  chatId?: string;
   runAgentCommand?: (agentId: string, message: string, sessionId: string) => Promise<void>;
 }): Promise<void> {
   const sessionId = `docs-publish-${sanitizeSessionId(projectId)}-${sanitizeSessionId(agentId)}`;
-  const message = `/handle ${absolutePath}`;
+  const message = chatId ? `/handle ${chatId} ${absolutePath}` : `/handle ${absolutePath}`;
 
   if (runAgentCommand) {
     return runAgentCommand(agentId, message, sessionId);

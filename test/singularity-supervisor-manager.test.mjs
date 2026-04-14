@@ -94,7 +94,9 @@ describe("singularity supervisor manager", () => {
     const notifications = [];
 
     await mkdir(projectDir, { recursive: true });
+    await mkdir(join(root, "active"), { recursive: true });
     await writeFile(join(root, "CURRENT_PROJECT"), "project-publish-notify\n", "utf8");
+    await writeFile(join(root, "active", "telegram:-10001.current"), "demo-notify\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
       "project_id: demo-notify\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
@@ -125,7 +127,7 @@ describe("singularity supervisor manager", () => {
     expect(notifications).toHaveLength(1);
     expect(notifications[0].agentId).toBe("singularity-video");
     expect(notifications[0].sessionId).toBe("docs-publish-demo-notify-singularity-video");
-    expect(notifications[0].message).toBe(`/handle ${join(docsRoot, "projects", "demo-notify", "05_delivery/final_article.md")}`);
+    expect(notifications[0].message).toBe(`/handle -10001 ${join(docsRoot, "projects", "demo-notify", "05_delivery/final_article.md")}`);
 
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_publish_state: done");
