@@ -1,0 +1,22 @@
+{
+  "generateVideo": {
+    "baseUrl": "https://ai-video-generator-git-dev-ainur.vercel.app",
+    "agentApiToken": "",
+    "websiteUrl": "https://ai-video-generator-git-dev-ainur.vercel.app/",
+    "publicCallbackUrl": "https://YOUR_DOMAIN_OR_IP/hooks/video-job",
+    "callbackToken": ""
+  },
+  "callbackServer": {
+    "host": "0.0.0.0",
+    "port": 9000,
+    "path": "/hooks/video-job"
+  },
+  "scriptSource": {
+    "type": "",
+    "value": ""
+  },
+  "telegram": {
+    "accountId": "singularity-video",
+    "botToken": ""
+  }
+}

@@ -15,6 +15,9 @@ params:
   singularity_writer_telegram_bot_key:
     required: false
     default: ""
+  singularity_video_telegram_bot_key:
+    required: false
+    default: ""
   auth_choice:
     default: "openai-api-key"
   allowed_origin:
@@ -62,6 +65,16 @@ openclaw:
             dmPolicy: "pairing"
             groupPolicy: "open"
             streaming: "partial"
+            actions:
+              sendMessage: true
+          singularity-video:
+            dmPolicy: "pairing"
+            groupPolicy: "open"
+            streaming: "partial"
+            groups:
+              "*":
+                requireMention: true
+                enabled: true
             actions:
               sendMessage: true
   root:
@@ -127,4 +140,8 @@ channels:
   - channel: "telegram"
     token: "${singularity_writer_telegram_bot_key}"
     agent: "singularity-writer"
+    group_policy: "open"
+  - channel: "telegram"
+    token: "${singularity_video_telegram_bot_key}"
+    agent: "singularity-video"
     group_policy: "open"

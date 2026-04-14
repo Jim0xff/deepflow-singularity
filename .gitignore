@@ -5,3 +5,6 @@ dist/
 .DS_Store
 */.DS_Store
 legacy-assets/
+assets/singularity-video/config/video-agent-config.json
+assets/singularity-video/drafts.json
+assets/singularity-video/runtime/
