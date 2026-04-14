@@ -129,6 +129,7 @@ test('handleVideoAgentFlow creates draft from /handle tg/path handoff', async ()
   assert.equal(draftCalls[0]?.source?.chat_id, '-100987');
   assert.equal(savedRecords[0]?.chat_id, '-100987');
   assert.equal(result.action, 'reply');
+  assert.equal(result.target?.account_id, 'video-agent');
   assert.equal(result.target?.chat_id, '-100987');
   assert.match(result.message, /文案已自动填好/);
   assert.match(result.message, /https:\/\/example.com\/open\/handle/);
@@ -194,6 +195,7 @@ test('handleVideoAgentFlow creates draft from /handle chat id handoff', async ()
   });
   assert.equal(draftCalls[0]?.source?.chat_id, '-100654');
   assert.equal(savedRecords[0]?.chat_id, '-100654');
+  assert.equal(result.target?.account_id, 'video-agent');
   assert.equal(result.target?.chat_id, '-100654');
   assert.match(result.message, /https:\/\/example.com\/open\/chat-id/);
 });

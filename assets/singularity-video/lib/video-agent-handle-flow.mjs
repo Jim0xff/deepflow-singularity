@@ -149,6 +149,7 @@ export async function handleVideoAgentFlow({
   return {
     action: 'reply',
     target: {
+      account_id: config?.telegram?.accountId || 'singularity-video',
       chat_id: handleCommand.targetChatId,
       reply_to_message_id: event?.message?.reply_to_message_id || event?.message?.id || null,
     },
