@@ -245,8 +245,8 @@ if (args.includes("--action write")) {
     await rm(root, { recursive: true, force: true });
   });
 
-  test("unbinds exited projects even after current pointer is cleared", async () => {
-    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-unbind-"));
+  test("does not unbind exited projects before agent unbind status is recorded", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-no-agent-unbind-"));
     const callsPath = join(root, "docs-calls.log");
     const scriptPath = join(root, "fake-supervisor.mjs");
     const docsManagerPath = join(root, "fake-docs-manager.mjs");
@@ -255,7 +255,7 @@ if (args.includes("--action write")) {
     await mkdir(projectDir, { recursive: true });
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-exited\nstatus: exited\ncurrent_step: exited\ndocs_publish_binding_id: http:singularity-demo-exited\n",
+      "project_id: demo-exited\nstatus: exited\ncurrent_step: exited\ndocs_binding_state: bound\ndocs_publish_binding_id: http:singularity-demo-exited\n",
       "utf8",
     );
     await writeFile(scriptPath, "", "utf8");
@@ -274,17 +274,10 @@ if (args.includes("--action write")) {
 
     await manager.runNow();
 
-    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("--action unbind --binding-id http:singularity-demo-exited");
-
+    const callsText = await readFile(callsPath, "utf8").catch(() => "");
+    expect(callsText.trim()).toBe("");
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
-    expect(statusText).toContain("docs_binding_state: unbound");
-    expect(statusText).toContain("docs_unbound_at:");
-
-    await manager.runNow();
-    const callsAfterSecondRun = (await readFile(callsPath, "utf8")).trim().split("\n");
-    expect(callsAfterSecondRun).toHaveLength(1);
+    expect(statusText).toContain("docs_binding_state: bound");
 
     await rm(root, { recursive: true, force: true });
   });
@@ -307,7 +300,7 @@ if (args.includes("--action write")) {
         "project_id: demo-exited-current",
         "status: exited",
         "current_step: exited",
-        "docs_binding_state: bound",
+        "docs_binding_state: unbound",
         "docs_publish_binding_id: http:singularity-demo-exited-current",
         "",
       ].join("\n"),
@@ -331,14 +324,16 @@ if (args.includes("--action write")) {
 
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_binding_state: unbound");
+    const callsText = await readFile(callsPath, "utf8").catch(() => "");
+    expect(callsText.trim()).toBe("");
     expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
     expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
 
     await rm(root, { recursive: true, force: true });
   });
 
-  test("unbinds completed projects but keeps current pointers after publish is done", async () => {
-    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-unbind-"));
+  test("does not unbind completed projects and keeps current pointers after publish is done", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-keep-bound-"));
     const callsPath = join(root, "docs-calls.log");
     const scriptPath = join(root, "fake-supervisor.mjs");
     const docsManagerPath = join(root, "fake-docs-manager.mjs");
@@ -379,19 +374,17 @@ if (args.includes("--action write")) {
 
     await manager.runNow();
 
-    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("--action unbind --binding-id http:singularity-demo-completed");
-
+    const callsText = await readFile(callsPath, "utf8").catch(() => "");
+    expect(callsText.trim()).toBe("");
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
-    expect(statusText).toContain("docs_binding_state: unbound");
+    expect(statusText).toContain("docs_binding_state: bound");
     expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("project-completed");
     expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("project-completed");
 
     await rm(root, { recursive: true, force: true });
   });
 
-  test("publishes completed pending projects before unbinding and clearing pointers", async () => {
+  test("publishes completed pending projects and keeps project bound until explicit exit", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-publish-"));
     const callsPath = join(root, "docs-calls.log");
     const scriptPath = join(root, "fake-supervisor.mjs");
@@ -435,14 +428,13 @@ if (args.includes("--action write")) {
     await manager.runNow();
 
     const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("--action write --binding-id http:singularity-demo-completed-pending --path 05_delivery/final_article.md --content completed final article");
-    expect(calls[1]).toContain("--action unbind --binding-id http:singularity-demo-completed-pending");
 
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_publish_state: done");
     expect(statusText).toContain("docs_publish_requested: no");
-    expect(statusText).toContain("docs_binding_state: unbound");
+    expect(statusText).toContain("docs_binding_state: bound");
     expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("project-completed-pending");
     expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("project-completed-pending");
 

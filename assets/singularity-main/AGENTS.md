@@ -80,7 +80,8 @@ OPTIONS = 1=SHOW_OUTPUT + 2=SHOW_PUBLISH_STATUS + 3=EXIT_CURRENT_PROJECT
 
 [STATUS]
 STATUS_FILE = /.openclaw/shared/projects/<project_id>/status.md
-STATUS_RULES = FIELDS_project_id_status_current_step_last_completed_step_next_step_updated_at_active_menu_scope_active_menu_options_workflow_mode_next_actor_awaiting_user_choice_docs_publish_requested_docs_publish_state_docs_publish_path_docs_publish_at_docs_binding_state_docs_bound_at_docs_unbound_at + ENUM_active_paused_completed_exited_restarted/step_3_selected_step_4_validation_step_5_debate_step_6_feedback_step_7_drafting_completed_exited/manual_auto/main_reviewer_writer_yes_no + UPDATE_STATUS_FIRST + BLOCK_IF_NOT_UPDATED
+STATUS_RULES = FIELDS_project_id_status_current_step_last_completed_step_next_step_updated_at_active_menu_scope_active_menu_options_workflow_mode_next_actor_awaiting_user_choice_docs_publish_requested_docs_publish_state_docs_publish_binding_id_docs_publish_path_docs_publish_at_docs_binding_state_docs_bound_at_docs_unbound_at + ENUM_active_paused_completed_exited_restarted/step_3_selected_step_4_validation_step_5_debate_step_6_feedback_step_7_drafting_completed_exited/manual_auto/main_reviewer_writer_yes_no + UPDATE_STATUS_FIRST + BLOCK_IF_NOT_UPDATED
+DOCS_UNBIND = RUN(node ~/.openclaw/skills/docs-manager/docs-manager-executor.mjs --action unbind --binding-id http:singularity-<project_id>) + OK_OR_not_bound + ELSE_BLOCK_EXIT
 SUPERVISOR_PROTOCOL = FOLLOW_SINGULARITY_SUPERVISOR_PROTOCOL.md
 
 [STEP_3_SELECTED]
@@ -149,7 +150,7 @@ FINAL_DELIVERY_RULE = ARTICLE_OK->SET_PUBLISH_PENDING+MENU_final_delivery_menu+N
 IF_ACTION = 上一步 -> WRITE_STAGE + LOG_TRANSITION + GO_PREVIOUS_STEP + KEEP_RECORDS + UPDATE_STATUS
 IF_ACTION = 下一步 -> REQUIRE_CURRENT_STEP_WRITTEN + WRITE_STAGE + LOG_TRANSITION + GO_NEXT_STEP + UPDATE_STATUS
 IF_ACTION = 重来 -> WRITE_STAGE + LOG_TRANSITION + KEEP_RECORDS + CREATE_NEW_ROUND + STATUS_RESTARTED
-IF_ACTION = 退出项目 -> WRITE_STAGE + LOG_TRANSITION + WRITE_EXIT_REASON_AND_STOP_POSITION_AND_ACCUMULATED_ASSETS + STATUS_EXITED
+IF_ACTION = 退出项目 -> WRITE_STAGE + LOG_TRANSITION + WRITE_EXIT_REASON_AND_STOP_POSITION_AND_ACCUMULATED_ASSETS + SET_docs_publish_binding_id=http:singularity-<project_id> + DOCS_UNBIND + SET_docs_binding_state=unbound,docs_unbound_at=now + STATUS_EXITED
 
 [STEP_TRANSITION_RULE]
 STEP_TRANSITION_MUST_BE_LOGGED = TRUE

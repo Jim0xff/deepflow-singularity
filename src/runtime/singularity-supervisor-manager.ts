@@ -70,9 +70,8 @@ export function createSingularitySupervisorManager(
       logger,
     });
 
-    await unbindExitedProjectsFromDocs({
+    await clearPointersForAgentUnboundExitedProjects({
       projectsRoot: options.projectsRoot,
-      docsManagerPath,
       logger,
     });
 
@@ -232,24 +231,14 @@ function shouldEnsureDocsBinding(status: Record<string, string>): boolean {
   return bindingState !== "bound";
 }
 
-function shouldUnbindFromDocs(status: Record<string, string>): boolean {
-  const projectStatus = String(status.status || "").trim();
-  const currentStep = String(status.current_step || "").trim();
-  const bindingState = String(status.docs_binding_state || "").trim().toLowerCase();
-  const publishRequested = String(status.docs_publish_requested || "").trim().toLowerCase() === "yes";
-  const publishState = String(status.docs_publish_state || "").trim().toLowerCase();
-  const closed = ["completed", "exited", "archived"].includes(projectStatus) || ["completed", "exited"].includes(currentStep);
-  if (publishRequested && publishState !== "done") return false;
-  return (
-    bindingState !== "unbound"
-    && closed
-  );
-}
-
 function shouldClearProjectPointers(status: Record<string, string>): boolean {
   const projectStatus = String(status.status || "").trim();
   const currentStep = String(status.current_step || "").trim();
   return ["exited", "archived"].includes(projectStatus) || currentStep === "exited";
+}
+
+function didAgentUnbindDocs(status: Record<string, string>): boolean {
+  return String(status.docs_binding_state || "").trim().toLowerCase() === "unbound";
 }
 
 function runSupervisorStart(scriptPath: string, projectDir: string): Promise<void> {
@@ -412,13 +401,11 @@ async function bindAndEnsureDocsProject({
   await runDocsManager(docsManagerPath, ["--action", "ensure", "--binding-id", bindingId, "--profile", "canonical-v1"]);
 }
 
-async function unbindExitedProjectsFromDocs({
+async function clearPointersForAgentUnboundExitedProjects({
   projectsRoot,
-  docsManagerPath,
   logger,
 }: {
   projectsRoot: string;
-  docsManagerPath: string;
   logger: Logger;
 }): Promise<void> {
   const entries = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
@@ -431,46 +418,12 @@ async function unbindExitedProjectsFromDocs({
     if (!statusText) continue;
 
     const status = parseStatusMd(statusText);
-    if (!shouldUnbindFromDocs(status)) continue;
-
-    const projectId = String(status.project_id || entry.name).trim() || entry.name;
-    const bindingId = String(status.docs_publish_binding_id || `http:singularity-${projectId}`).trim();
-
-    try {
-      await runDocsManager(docsManagerPath, ["--action", "unbind", "--binding-id", bindingId]);
-      updateStatusMdAtomic(statusPath, {
-        docs_binding_state: "unbound",
-        docs_publish_error: "",
-        docs_unbound_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-      if (shouldClearProjectPointers(status)) {
-        await clearProjectPointers(projectsRoot, entry.name);
-      }
-      logger.info(`[singularity-publish] unbound ${bindingId}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("project is not bound")) {
-        updateStatusMdAtomic(statusPath, {
-          docs_binding_state: "unbound",
-          docs_publish_error: "",
-          docs_unbound_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-        if (shouldClearProjectPointers(status)) {
-          await clearProjectPointers(projectsRoot, entry.name);
-        }
-        logger.info(`[singularity-publish] already unbound ${bindingId}`);
-        continue;
-      }
-
-      updateStatusMdAtomic(statusPath, {
-        docs_binding_state: "unbind_failed",
-        docs_publish_error: message,
-        updated_at: new Date().toISOString(),
-      });
-      logger.error(`[singularity-publish] unbind failed ${bindingId}: ${message}`);
+    if (!shouldClearProjectPointers(status)) continue;
+    if (!didAgentUnbindDocs(status)) {
+      logger.warn(`[singularity-publish] exit pointer not cleared before agent unbinds docs: ${entry.name}`);
+      continue;
     }
+    await clearProjectPointers(projectsRoot, entry.name);
   }
 }
 
