@@ -246,6 +246,12 @@ function shouldUnbindFromDocs(status: Record<string, string>): boolean {
   );
 }
 
+function shouldClearProjectPointers(status: Record<string, string>): boolean {
+  const projectStatus = String(status.status || "").trim();
+  const currentStep = String(status.current_step || "").trim();
+  return ["exited", "archived"].includes(projectStatus) || currentStep === "exited";
+}
+
 function runSupervisorStart(scriptPath: string, projectDir: string): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [scriptPath, "start", "--project-dir", projectDir], {
@@ -438,7 +444,9 @@ async function unbindExitedProjectsFromDocs({
         docs_unbound_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
-      await clearProjectPointers(projectsRoot, entry.name);
+      if (shouldClearProjectPointers(status)) {
+        await clearProjectPointers(projectsRoot, entry.name);
+      }
       logger.info(`[singularity-publish] unbound ${bindingId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -449,7 +457,9 @@ async function unbindExitedProjectsFromDocs({
           docs_unbound_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
-        await clearProjectPointers(projectsRoot, entry.name);
+        if (shouldClearProjectPointers(status)) {
+          await clearProjectPointers(projectsRoot, entry.name);
+        }
         logger.info(`[singularity-publish] already unbound ${bindingId}`);
         continue;
       }

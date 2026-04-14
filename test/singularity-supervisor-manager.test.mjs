@@ -289,7 +289,55 @@ if (args.includes("--action write")) {
     await rm(root, { recursive: true, force: true });
   });
 
-  test("unbinds completed projects and clears current pointers after publish is done", async () => {
+  test("clears current pointers only after explicit project exit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-exited-clear-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-exited-current");
+    const activeDir = join(root, "active");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-exited-current\n", "utf8");
+    await writeFile(join(activeDir, "telegram:-100.current"), "project-exited-current\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      [
+        "project_id: demo-exited-current",
+        "status: exited",
+        "current_step: exited",
+        "docs_binding_state: bound",
+        "docs_publish_binding_id: http:singularity-demo-exited-current",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+    expect(statusText).toContain("docs_binding_state: unbound");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("unbinds completed projects but keeps current pointers after publish is done", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-completed-unbind-"));
     const callsPath = join(root, "docs-calls.log");
     const scriptPath = join(root, "fake-supervisor.mjs");
@@ -337,8 +385,8 @@ if (args.includes("--action write")) {
 
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_binding_state: unbound");
-    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
-    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("project-completed");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("project-completed");
 
     await rm(root, { recursive: true, force: true });
   });
@@ -395,8 +443,8 @@ if (args.includes("--action write")) {
     expect(statusText).toContain("docs_publish_state: done");
     expect(statusText).toContain("docs_publish_requested: no");
     expect(statusText).toContain("docs_binding_state: unbound");
-    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
-    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("project-completed-pending");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("project-completed-pending");
 
     await rm(root, { recursive: true, force: true });
   });
