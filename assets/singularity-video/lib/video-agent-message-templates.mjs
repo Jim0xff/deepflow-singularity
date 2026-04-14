@@ -18,6 +18,10 @@ export function buildDraftCreateFailedMessage() {
   return '生成入口创建失败，请稍后重试';
 }
 
+export function buildHandleCommandInvalidMessage() {
+  return '参数格式错误，请使用 /handle <群ID> <文案路径或URL>';
+}
+
 export function buildManualWebsiteEntryMessage({ websiteUrl }) {
   return [
     '视频生成入口：',

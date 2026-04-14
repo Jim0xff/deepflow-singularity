@@ -22,7 +22,13 @@ The operator must provide:
 
 ## Script Source
 
-`/handle <source>` provides the script source.
+`/handle <chat_id> <source>` provides the Telegram reply target and script source.
+
+Example:
+
+```text
+/handle -1001234567890 https://example.com/final-script.txt
+```
 
 Supported source values:
 
@@ -30,6 +36,8 @@ Supported source values:
 - HTTP/HTTPS URL returning script text
 
 Normal user conversation does not use `scriptSource` and does not create a draft. It returns `generateVideo.websiteUrl` for manual entry.
+
+The `<chat_id>` value must be saved in the draft context. Callback notifications use that saved chat ID, not the OpenClaw message context that delivered `/handle`.
 
 ## Callback Server
 

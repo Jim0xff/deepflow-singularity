@@ -4,6 +4,7 @@ import { createGenerateVideoDraft } from './video-agent-client.mjs';
 import {
   buildDraftCreatedMessage,
   buildDraftCreateFailedMessage,
+  buildHandleCommandInvalidMessage,
   buildManualWebsiteEntryMessage,
 } from './video-agent-message-templates.mjs';
 import { getVideoAgentPaths } from './video-agent-paths.mjs';
@@ -33,8 +34,29 @@ function parseHandleCommand(text) {
   if (!match) {
     return null;
   }
-  const source = match[1].trim();
-  return source ? source : null;
+
+  const payload = match[1].trim();
+  const handoff = payload.match(/^tg:(\S+)\s+path:(.+)$/)
+    || payload.match(/^(\S+)\s+(.+)$/);
+  if (!handoff) {
+    return {
+      malformed: true,
+    };
+  }
+
+  const targetChatId = handoff[1].trim();
+  const source = handoff[2].trim();
+  if (!targetChatId || !source) {
+    return {
+      malformed: true,
+    };
+  }
+
+  return {
+    malformed: false,
+    targetChatId,
+    source,
+  };
 }
 
 function resolveWebsiteUrl(config) {
@@ -56,9 +78,9 @@ export async function handleVideoAgentFlow({
 
   const paths = getVideoAgentPaths();
   const config = runtimeConfig || await readRuntimeConfig(paths.configFile);
-  const handleSource = parseHandleCommand(event?.message?.text);
+  const handleCommand = parseHandleCommand(event?.message?.text);
 
-  if (!handleSource) {
+  if (!handleCommand) {
     return {
       action: 'reply',
       message: buildManualWebsiteEntryMessage({
@@ -67,10 +89,17 @@ export async function handleVideoAgentFlow({
     };
   }
 
+  if (handleCommand.malformed) {
+    return {
+      action: 'reply',
+      message: buildHandleCommandInvalidMessage(),
+    };
+  }
+
   const scriptSource = await loadScriptSource({
     scriptSource: {
       type: '',
-      value: handleSource,
+      value: handleCommand.source,
     },
   });
 
@@ -78,7 +107,7 @@ export async function handleVideoAgentFlow({
     script: scriptSource.loaded ? scriptSource.script : undefined,
     source: {
       platform: 'telegram',
-      chat_id: event?.chat?.id || null,
+      chat_id: handleCommand.targetChatId,
       user_id: event?.sender?.id || null,
       message_id: event?.message?.id || null,
       reply_to_message_id: event?.message?.reply_to_message_id || null,
@@ -102,7 +131,7 @@ export async function handleVideoAgentFlow({
     draftsFile: paths.draftsFile,
     record: {
       draft_token: draft.draftToken,
-      chat_id: event?.chat?.id || null,
+      chat_id: handleCommand.targetChatId,
       user_id: event?.sender?.id || null,
       message_id: event?.message?.id || null,
       reply_to_message_id: event?.message?.reply_to_message_id || null,
@@ -119,6 +148,10 @@ export async function handleVideoAgentFlow({
 
   return {
     action: 'reply',
+    target: {
+      chat_id: handleCommand.targetChatId,
+      reply_to_message_id: event?.message?.reply_to_message_id || event?.message?.id || null,
+    },
     message: buildDraftCreatedMessage({
       openUrl: draft.openUrl,
       scriptLoaded: scriptSource.loaded,

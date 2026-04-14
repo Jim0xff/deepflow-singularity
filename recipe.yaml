@@ -68,13 +68,11 @@ openclaw:
             actions:
               sendMessage: true
           singularity-video:
+            capabilities:
+              inlineButtons: "all"
             dmPolicy: "pairing"
             groupPolicy: "open"
             streaming: "partial"
-            groups:
-              "*":
-                requireMention: true
-                enabled: true
             actions:
               sendMessage: true
   root:

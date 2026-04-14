@@ -66,13 +66,14 @@ test('handleVideoAgentFlow returns website url for normal group mention without 
   assert.equal(createDraftCalled, false);
 });
 
-test('handleVideoAgentFlow creates draft from /handle source override', async () => {
+test('handleVideoAgentFlow creates draft from /handle tg/path handoff', async () => {
   const sourceCalls = [];
   const draftCalls = [];
+  const savedRecords = [];
   const result = await handleVideoAgentFlow({
     event: {
       chat: {
-        id: '1005',
+        id: 'openclaw-message',
         type: 'direct',
       },
       sender: {
@@ -80,7 +81,7 @@ test('handleVideoAgentFlow creates draft from /handle source override', async ()
       },
       message: {
         id: '3005',
-        text: '/handle https://example.com/final-script.txt',
+        text: '/handle tg:-100987 path:https://example.com/final-script.txt',
       },
       mention: false,
     },
@@ -115,7 +116,9 @@ test('handleVideoAgentFlow creates draft from /handle source override', async ()
         error: null,
       };
     },
-    saveDraftContext: async () => {},
+    saveDraftContext: async ({ record }) => {
+      savedRecords.push(record);
+    },
   });
 
   assert.deepEqual(sourceCalls[0], {
@@ -123,9 +126,114 @@ test('handleVideoAgentFlow creates draft from /handle source override', async ()
     value: 'https://example.com/final-script.txt',
   });
   assert.equal(draftCalls[0]?.script, '上游最终文案');
+  assert.equal(draftCalls[0]?.source?.chat_id, '-100987');
+  assert.equal(savedRecords[0]?.chat_id, '-100987');
   assert.equal(result.action, 'reply');
+  assert.equal(result.target?.chat_id, '-100987');
   assert.match(result.message, /文案已自动填好/);
   assert.match(result.message, /https:\/\/example.com\/open\/handle/);
+});
+
+test('handleVideoAgentFlow creates draft from /handle chat id handoff', async () => {
+  const sourceCalls = [];
+  const draftCalls = [];
+  const savedRecords = [];
+  const result = await handleVideoAgentFlow({
+    event: {
+      chat: {
+        id: 'openclaw-message',
+        type: 'direct',
+      },
+      sender: {
+        id: '2008',
+      },
+      message: {
+        id: '3008',
+        text: '/handle -100654 /tmp/final-script.txt',
+      },
+      mention: false,
+    },
+    runtimeConfig: {
+      generateVideo: {
+        publicCallbackUrl: 'http://host.docker.internal:9000/hooks/video-job',
+        callbackToken: 'token-1',
+      },
+      telegram: {
+        accountId: 'video-agent',
+      },
+    },
+    loadScriptSource: async ({ scriptSource }) => {
+      sourceCalls.push(scriptSource);
+      return {
+        loaded: true,
+        sourceType: 'file',
+        sourceValue: scriptSource.value,
+        script: '上游最终文案',
+        error: null,
+      };
+    },
+    createDraft: async (payload) => {
+      draftCalls.push(payload);
+      return {
+        ok: true,
+        status: 200,
+        draftToken: 'draft-chat-id',
+        openUrl: 'https://example.com/open/chat-id',
+        expiresAt: '2026-04-13T00:00:00.000Z',
+        error: null,
+      };
+    },
+    saveDraftContext: async ({ record }) => {
+      savedRecords.push(record);
+    },
+  });
+
+  assert.deepEqual(sourceCalls[0], {
+    type: '',
+    value: '/tmp/final-script.txt',
+  });
+  assert.equal(draftCalls[0]?.source?.chat_id, '-100654');
+  assert.equal(savedRecords[0]?.chat_id, '-100654');
+  assert.equal(result.target?.chat_id, '-100654');
+  assert.match(result.message, /https:\/\/example.com\/open\/chat-id/);
+});
+
+test('handleVideoAgentFlow rejects malformed /handle command', async () => {
+  let createDraftCalled = false;
+  const result = await handleVideoAgentFlow({
+    event: {
+      chat: {
+        id: 'openclaw-message',
+        type: 'direct',
+      },
+      sender: {
+        id: '2007',
+      },
+      message: {
+        id: '3007',
+        text: '/handle /tmp/final-script.txt',
+      },
+      mention: false,
+    },
+    runtimeConfig: {
+      generateVideo: {
+        websiteUrl: 'https://generate-video-gamma.vercel.app/',
+      },
+    },
+    createDraft: async () => {
+      createDraftCalled = true;
+      throw new Error('should not create draft for malformed handoff');
+    },
+    saveDraftContext: async () => {
+      throw new Error('should not save malformed handoff');
+    },
+  });
+
+  assert.deepEqual(result, {
+    action: 'reply',
+    message: '参数格式错误，请使用 /handle <群ID> <文案路径或URL>',
+  });
+  assert.equal(createDraftCalled, false);
 });
 
 test('handleVideoAgentFlow returns website url without creating draft for normal direct chat', async () => {
@@ -209,7 +317,7 @@ test('handleVideoAgentFlow returns failure message when draft creation fails', a
       },
       message: {
         id: '3004',
-        text: '/handle /tmp/final-script.txt',
+        text: '/handle tg:-1004 path:/tmp/final-script.txt',
       },
       mention: false,
     },
