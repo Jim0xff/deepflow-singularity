@@ -280,20 +280,28 @@ async function publishFinalArticleToDocs({
   logger: Logger;
 }): Promise<void> {
   const statusPath = join(projectDir, "status.md");
+  const finalOutputPath = join(projectDir, "final-output.md");
   const outputPath = join(projectDir, "output.md");
-  const article = await fs.readFile(outputPath, "utf8").catch(() => "");
+  const status = parseStatusMd(readStatusSync(statusPath));
+  const finalArticle = await fs.readFile(finalOutputPath, "utf8").catch(() => "");
+  const draftArticle = await fs.readFile(outputPath, "utf8").catch(() => "");
+  const finalPublishRequired =
+    String(status.final_article_ready || "").trim().toLowerCase() === "yes" ||
+    String(status.review_target || "").trim().toLowerCase() === "final" ||
+    String(status.active_menu_scope || "").trim() === "final_delivery_menu";
+  const article = finalArticle.trim() ? finalArticle : (finalPublishRequired ? "" : draftArticle);
   if (!article.trim()) {
+    const errorCode = finalPublishRequired ? "final_output_empty" : "final_output_and_output_empty";
     updateStatusMdAtomic(statusPath, {
       docs_publish_state: "failed",
-      docs_publish_error: "output_md_empty",
+      docs_publish_error: errorCode,
       updated_at: new Date().toISOString(),
     });
-    throw new Error("output.md is empty");
+    throw new Error(finalPublishRequired ? "final-output.md is empty" : "final-output.md and output.md are empty");
   }
 
   const bindingId = `http:singularity-${projectId}`;
   const targetPath = "05_delivery/final_article.md";
-  const status = parseStatusMd(readStatusSync(statusPath));
 
   updateStatusMdAtomic(statusPath, {
     docs_publish_state: "syncing",

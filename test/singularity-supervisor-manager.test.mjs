@@ -84,6 +84,86 @@ describe("singularity supervisor manager", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  test("publishes final-output.md before output.md when present", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-publish-final-output-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-final-output");
+
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-final-output\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      "project_id: demo-final-output\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "utf8",
+    );
+    await writeFile(join(projectDir, "output.md"), "draft article body", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "formal article body", "utf8");
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--content formal article body");
+    expect(calls[0]).not.toContain("draft article body");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("requires final-output.md for final article publish", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-publish-require-final-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-require-final");
+
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-require-final\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      "project_id: demo-require-final\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\nfinal_article_ready: yes\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "utf8",
+    );
+    await writeFile(join(projectDir, "output.md"), "draft article body", "utf8");
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const calls = await readFile(callsPath, "utf8").catch(() => "");
+    expect(calls).toBe("");
+    const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+    expect(statusText).toContain("docs_publish_state: failed");
+    expect(statusText).toContain("docs_publish_error: final_output_empty");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test("notifies configured agent with final docs path after publish", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-publish-notify-"));
     const docsRoot = join(root, "docs");

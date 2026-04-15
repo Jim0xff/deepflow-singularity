@@ -26,14 +26,14 @@ ROOT_RULE = ROOT_REQUIRED + ALL_PROJECTS_UNDER_SHARED_ROOT + NO_PRIVATE_PARALLEL
 PROJECT_START = PRE_STEP_3_INPUT_ONLY + GENERATE_PROJECT_ID_CREATE_DIR_REQUIRED_FILES + WRITE_PROJECT_AND_INTERACTION + SET_STEP_step_3_selected
 PROJECT_ID = FORMAT_YYYY-MM-DD-topic-slug + IMMUTABLE_ZERO_PADDED + SLUG_a-z0-9-hyphen_ONLY_3_48 + FORBIDDEN_CHINESE_SPACE_UNDERSCORE_SLASH_PUNCT_UPPERCASE + INVALID_OR_CHANGED_BLOCK + SUBSTANTIAL_THEME_CHANGE_NEW_PROJECT_ID
 PROJECT_DIR = /.openclaw/shared/projects/<project_id>/
-PROJECT_FILES = REQUIRED_project.md+status.md+interaction_log.md+materials.md+output.md+handoff.md+draft_review_history.md + SAME_PROJECT_ID + CREATE_IF_MISSING + BLOCK_AND_REPAIR_IF_MISMATCH
+PROJECT_FILES = REQUIRED_project.md+status.md+interaction_log.md+materials.md+output.md+final-output.md+handoff.md+draft_review_history.md + SAME_PROJECT_ID + CREATE_IF_MISSING + BLOCK_AND_REPAIR_IF_MISMATCH
 
 [SHARED_RECORDING]
 SHARED_WRITE = ROOT_/.openclaw/shared/ + DIRECT_ONLY + NO_WORKSPACE_MIRRORS + NO_MANUAL_COPY + APPLIES_memory_role_map_pointers_project_files_templates + REPORT_EXACT_PATH_ON_FAIL
 HISTORY_FILES = interaction_log.md + draft_review_history.md + handoff.md -> APPEND_ONLY + NO_FULL_REWRITE + READ_TAIL_FIRST
-PROCESS_FILE_VS_RESULT_FILE_RULE = PROCESS(interaction_log.md+draft_review_history.md+handoff.md)=APPEND_FULL_BLOCKS_NOT_SUMMARY + RESULT(materials.md+output.md)=LATEST_FULL_RESULT_ONLY
+PROCESS_FILE_VS_RESULT_FILE_RULE = PROCESS(interaction_log.md+draft_review_history.md+handoff.md)=APPEND_FULL_BLOCKS_NOT_SUMMARY + RESULT(materials.md+output.md+final-output.md)=LATEST_FULL_RESULT_ONLY
 TEMPLATE_LIBRARY = ROOT_/.openclaw/shared/templates/ + FILES_index.md_articles/<template_id>.md + BIND_project.md.template_id_handoff.md.template_id + IF_TEMPLATE_ID_EXISTS_WRITER_AND_REVIEWER_MUST_READ + IF_MISSING_DO_NOT_BLOCK_STEP_7_AND_MAY_SUGGEST_SAVING_REFERENCE_ARTICLE + SAVE_ONLY_AFTER_EDITOR_CONFIRMS_REUSABLE + FORBIDDEN_/.openclaw/shared/projects/<project_id>/templates/
-PROJECT_RECORDING = PRIMARY_interaction_log.md + AGENT_EXCHANGE_THESIS_COUNTEREXAMPLE_STRUCTURE_DEBATE->interaction_log.md + SOURCE_MATERIAL->materials.md + STAGE_OUTPUT->output.md + HANDOFF->handoff.md + STEP_7_HISTORY->draft_review_history.md + NO_SUMMARY_ONLY + NO_CONCLUSION_WITHOUT_PROCESS + USER_SAID_RECORD_IT_AND_NOT_WRITTEN=VIOLATION
+PROJECT_RECORDING = PRIMARY_interaction_log.md + AGENT_EXCHANGE_THESIS_COUNTEREXAMPLE_STRUCTURE_DEBATE->interaction_log.md + SOURCE_MATERIAL->materials.md + STAGE_OUTPUT->output.md/final-output.md + HANDOFF->handoff.md + STEP_7_HISTORY->draft_review_history.md + NO_SUMMARY_ONLY + NO_CONCLUSION_WITHOUT_PROCESS + USER_SAID_RECORD_IT_AND_NOT_WRITTEN=VIOLATION
 
 [GROUP_ROLE_MAP]
 FILE = /.openclaw/shared/knowledge/group/<chat_id>.roles.json
@@ -72,7 +72,11 @@ OPTIONS = 1=WRITE_CURRENT_STAGE_RESULT_AND_ENTER_AUTO_STEP_7 + 2=MODIFY_STEP_6_F
 
 [STEP_7_MENU]
 MENU_SCOPE = step_7_menu
-OPTIONS = 1=CONFIRM_ARTICLE_OK_KEEP_PROJECT + 2=FEEDBACK_TO_WRITER_AUTO + 3=REVIEWER_AUTO + 4=EXIT_CURRENT_PROJECT
+OPTIONS = 1=GENERATE_FINAL_AUTO + 2=FEEDBACK_TO_WRITER_AUTO + 3=REVIEWER_AUTO + 4=EXIT_CURRENT_PROJECT
+
+[STEP_7_FINAL_MENU]
+MENU_SCOPE = step_7_final_menu
+OPTIONS = 1=PUBLISH_PENDING_KEEP_PROJECT + 2=FEEDBACK_TO_FINAL_WRITER_AUTO + 3=REVIEW_FINAL_AUTO + 4=EXIT_CURRENT_PROJECT
 
 [FINAL_DELIVERY_MENU]
 MENU_SCOPE = final_delivery_menu
@@ -80,7 +84,7 @@ OPTIONS = 1=SHOW_OUTPUT + 2=SHOW_PUBLISH_STATUS + 3=EXIT_CURRENT_PROJECT
 
 [STATUS]
 STATUS_FILE = /.openclaw/shared/projects/<project_id>/status.md
-STATUS_RULES = FIELDS_project_id_status_current_step_last_completed_step_next_step_updated_at_active_menu_scope_active_menu_options_workflow_mode_next_actor_awaiting_user_choice_docs_publish_requested_docs_publish_state_docs_publish_binding_id_docs_publish_path_docs_publish_at_docs_binding_state_docs_bound_at_docs_unbound_at + ENUM_active_paused_completed_exited_restarted/step_3_selected_step_4_validation_step_5_debate_step_6_feedback_step_7_drafting_completed_exited/manual_auto/main_reviewer_writer_yes_no + UPDATE_STATUS_FIRST + BLOCK_IF_NOT_UPDATED
+STATUS_RULES = FIELDS_project_id_status_current_step_last_completed_step_next_step_updated_at_active_menu_scope_active_menu_options_workflow_mode_next_actor_awaiting_user_choice_final_article_ready_review_target_after_final_writer_docs_publish_requested_docs_publish_state_docs_publish_binding_id_docs_publish_path_docs_publish_at_docs_binding_state_docs_bound_at_docs_unbound_at + ENUM_active_paused_completed_exited_restarted/step_3_selected_step_4_validation_step_5_debate_step_6_feedback_step_7_drafting_completed_exited/manual_auto/main_reviewer_writer_final_writer/yes_no/draft_final + UPDATE_STATUS_FIRST + BLOCK_IF_NOT_UPDATED
 SUPERVISOR_PROTOCOL = FOLLOW_SINGULARITY_SUPERVISOR_PROTOCOL.md
 
 [STEP_3_SELECTED]
@@ -135,15 +139,15 @@ STEP_6_STATE = WRITE_output.md + STATUS_step_6_feedback + NEXT_step_7_drafting +
 IF_NOT_RECORDED = BLOCK_NEXT_STEP
 
 [STEP_7_DRAFTING]
-ROLE_RULE = MAIN_DISPATCH_ONLY + WRITER=@WRITER_BOT_ONLY + REVIEWER=@REVIEWER_BOT + output.md_AND_draft_review_history.md_BY_WRITER_OR_REVIEWER_ONLY
+ROLE_RULE = MAIN_DISPATCH_ONLY + DRAFT_WRITER=@WRITER_BOT_ONLY + FINAL_WRITER=singularity-final-writer + REVIEWER=@REVIEWER_BOT + output.md_BY_WRITER + final-output.md_BY_FINAL_WRITER + draft_review_history.md_BY_STEP7_AGENTS
 TEMPLATE_RULE = IF_TEMPLATE_ID_EXISTS_TELL_WRITER_READ + IF_MISSING_ASK_TEMPLATE_PREFERENCE_FIRST
 WRITE_RULE = handoff.md_ONLY
 REPLY_RULE = NO_DIRECT_ARTICLE_OUTPUT + ONLY_NEXT_ACTION_AND_TARGET_AGENT
 USER_TRIGGER_RULE = REWRITE_OR_NEW_VERSION->WRITER + RE_REVIEW->REVIEWER + START_NEW_PROJECT->EXIT_CURRENT_PROJECT + END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS = step_7_drafting
 STEP_7_STATE = ON_ENTER->SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
-APPROVAL_RETURN_RULE = AFTER_REVIEWER_APPROVES_MAIN_POSTS_WRAPUP_AND_NEXT_MENU
-FINAL_DELIVERY_RULE = ARTICLE_OK->SET_PUBLISH_PENDING+MENU_final_delivery_menu+NO_EXIT_UNTIL_3
+APPROVAL_RETURN_RULE = DRAFT_APPROVED->MAIN_MENU(1生成正式版;2修改;3审稿;4退出)
+FINAL_DELIVERY_RULE = FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+step_7_final_menu + ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
 
 [CONTROL_RULES]
 IF_ACTION = 上一步 -> WRITE_STAGE + LOG_TRANSITION + GO_PREVIOUS_STEP + KEEP_RECORDS + UPDATE_STATUS

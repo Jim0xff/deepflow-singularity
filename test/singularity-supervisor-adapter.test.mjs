@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
 import { tick } from "../scripts/supervisor/adapters/singularity-flow.mjs";
 
 describe("singularity supervisor adapter", () => {
@@ -60,10 +64,12 @@ describe("singularity supervisor adapter", () => {
       current_step: "step_7_drafting",
       next_actor: "reviewer",
       awaiting_user_choice: "no",
+      final_article_ready: "no",
+      review_target: "draft",
     });
   });
 
-  test("returns step 7 to manual after main final menu", async () => {
+  test("returns step 7 to manual after draft approval menu", async () => {
     const result = await tick({
       projectDir: "/tmp/project",
       statusMtimeMs: 104,
@@ -83,8 +89,114 @@ describe("singularity supervisor adapter", () => {
       active_menu_scope: "step_7_menu",
     });
     expect(result.dispatch.message).toContain("4. 退出当前项目");
-    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=CONFIRM_ARTICLE_OK_KEEP_PROJECT");
+    expect(result.dispatch.message).toContain("1. 生成正式版文章");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(workflow_mode=auto,next_actor=final_writer");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("4=EXIT_CURRENT_PROJECT");
+  });
+
+  test("dispatches final writer and returns to main with final-output", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 106,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.key).toBe("step7:106:final_writer:main");
+    expect(result.dispatch.suppressDelivery).toBe(true);
+    expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
+    expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
+    expect(result.dispatch.afterSuccessPatch).toMatchObject({
+      workflow_mode: "auto",
+      current_step: "step_7_drafting",
+      next_actor: "main",
+      awaiting_user_choice: "no",
+      final_article_ready: "yes",
+    });
+  });
+
+  test("returns final writer to reviewer during final review loop", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 107,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "reviewer",
+      },
+    });
+
+    expect(result.dispatch.key).toBe("step7:107:final_writer:reviewer");
+    expect(result.dispatch.afterSuccessPatch).toMatchObject({
+      next_actor: "reviewer",
+      final_article_ready: "no",
+    });
+  });
+
+  test("posts final article menu after final writer", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 108,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "main",
+        final_article_ready: "yes",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("main");
+    expect(result.dispatch.message).toContain("final-output.md");
+    expect(result.dispatch.afterStatusPatch).toMatchObject({
+      active_menu_scope: "step_7_final_menu",
+      workflow_mode: "manual",
+      awaiting_user_choice: "yes",
+    });
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(docs_publish_requested=yes");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("next_actor=final_writer");
+  });
+
+  test("blocks final review until final-output exists", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 109,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "final",
+      },
+    });
+
+    expect(result.dispatch).toBeUndefined();
+    expect(result.runtimePatch.last_error).toBe("final_output_missing_for_review");
+  });
+
+  test("dispatches reviewer for final review when final-output exists", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-review-"));
+    await writeFile(join(projectDir, "final-output.md"), "formal article", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 110,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "final",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("review final-output.md");
+
+    await rm(projectDir, { recursive: true, force: true });
   });
 
   test("step 7 reviewer delivers the review block and advances from latest verdict", async () => {

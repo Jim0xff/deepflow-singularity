@@ -5,6 +5,7 @@ This protocol defines the minimal shared state used by:
 - `singularity-main`
 - `singularity-reviewer`
 - `singularity-writer`
+- `singularity-final-writer`
 - `scripts/supervisor/adapters/singularity-flow.mjs`
 
 ## Status Fields
@@ -13,8 +14,11 @@ All fields live in `/.openclaw/shared/projects/<project_id>/status.md`.
 
 - `workflow_mode: manual | auto`
 - `current_step: step_3_selected | step_4_validation | step_5_debate | step_6_feedback | step_7_drafting | completed | exited`
-- `next_actor: main | reviewer | writer`
+- `next_actor: main | reviewer | writer | final_writer`
 - `awaiting_user_choice: yes | no`
+- `final_article_ready: yes | no`
+- `review_target: draft | final`
+- `after_final_writer: main | reviewer`
 - `docs_publish_requested: yes | no`
 - `docs_publish_state: pending | syncing | done | failed`
 
@@ -82,6 +86,8 @@ After reviewer finishes review:
 
 After `main` posts the final wrap-up, the workflow may return to `manual` or transition to `completed`.
 
+After draft approval, `main` may set `next_actor=final_writer`. The final writer reads `output.md`, writes the formal article to `final-output.md`, appends `draft_review_history.md`, and returns to `main` unless `after_final_writer=reviewer`.
+
 ## Docs Publish
 
 After reviewer approval, if the editor confirms the article is final and acceptable for delivery, `main` must set:
@@ -89,7 +95,7 @@ After reviewer approval, if the editor confirms the article is final and accepta
 - `docs_publish_requested=yes`
 - `docs_publish_state=pending`
 
-The runtime manager will then sync `output.md` into the bound docs-manager project folder at `05_delivery/final_article.md` and write back:
+The runtime manager syncs `final-output.md` into the bound docs-manager project folder at `05_delivery/final_article.md`. Legacy projects without final state may fall back to `output.md`.
 
 - `docs_publish_state=done`
 - `docs_publish_requested=no`

@@ -41,7 +41,7 @@ const OPENCLAW_CLI = resolveExistingPath([
 
 function usage() {
   console.error(
-    "usage: supervisor-core.mjs <start|watch> --project-dir <dir> --adapter <file> [--poll-ms <ms>] [--main-agent-id <id>] [--reviewer-agent-id <id>] [--writer-agent-id <id>] [--main-session-id <id>] [--reviewer-session-id <id>] [--writer-session-id <id>]"
+    "usage: supervisor-core.mjs <start|watch> --project-dir <dir> --adapter <file> [--poll-ms <ms>] [--main-agent-id <id>] [--reviewer-agent-id <id>] [--writer-agent-id <id>] [--final-writer-agent-id <id>] [--main-session-id <id>] [--reviewer-session-id <id>] [--writer-session-id <id>] [--final-writer-session-id <id>]"
   );
   process.exit(1);
 }
@@ -93,6 +93,10 @@ function buildAgentRuntime(args) {
     writer: {
       agentId: args["writer-agent-id"] || "singularity-writer",
       sessionId: args["writer-session-id"] || "",
+    },
+    final_writer: {
+      agentId: args["final-writer-agent-id"] || "singularity-final-writer",
+      sessionId: args["final-writer-session-id"] || "",
     },
   };
 }
@@ -186,20 +190,26 @@ function hasChangedRelativeFile(projectDir, before = {}) {
   });
 }
 
-function verdictPatch(verdict) {
+function verdictPatch(verdict, status = {}) {
+  const reviewTarget = String(status.review_target || "").trim().toLowerCase();
+  const finalArticleReady = String(status.final_article_ready || "").trim().toLowerCase() === "yes";
+  const isFinalReview = reviewTarget === "final" || finalArticleReady;
   if (verdict === "approved") {
     return {
       workflow_mode: "auto",
       current_step: "step_7_drafting",
       next_actor: "main",
       awaiting_user_choice: "no",
+      final_article_ready: isFinalReview ? "yes" : "no",
     };
   }
   return {
     workflow_mode: "auto",
     current_step: "step_7_drafting",
-    next_actor: "writer",
+    next_actor: isFinalReview ? "final_writer" : "writer",
     awaiting_user_choice: "no",
+    final_article_ready: "no",
+    after_final_writer: isFinalReview ? "reviewer" : "",
   };
 }
 
@@ -302,13 +312,15 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                   nextRuntime.last_dispatch_failed_at = new Date().toISOString();
                   nextRuntime.last_error = "latest_verdict_missing";
                 } else {
-                  const deliveryResult = deliverAgentPayloads({
-                    delivery,
-                    actor,
-                    run,
-                    dispatch: { ...result.dispatch, projectDir },
-                    nextRuntime,
-                  });
+                  const deliveryResult = result.dispatch.suppressDelivery
+                    ? { ok: true, sent: 0, failed: 0 }
+                    : deliverAgentPayloads({
+                        delivery,
+                        actor,
+                        run,
+                        dispatch: { ...result.dispatch, projectDir },
+                        nextRuntime,
+                      });
                   if (!deliveryResult.ok) {
                     dispatched = false;
                     nextRuntime.last_dispatch_failed_at = new Date().toISOString();
@@ -326,7 +338,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       dispatched = false;
                     }
                     if (result.dispatch.afterSuccessPatchFromLatestVerdict && successFilesChanged) {
-                      const patch = verdictPatch(parsedVerdict);
+                      const patch = verdictPatch(parsedVerdict, status);
                       if (patch) {
                         updateStatusMdAtomic(statusPath, {
                           ...patch,
