@@ -10,6 +10,7 @@ const STEP_5_REVIEWER_MESSAGE = [
   "Append the full reviewer output to interaction_log.md.",
   "Group reply must be the full counter-argument itself: Counter-Argument, Objections, Counter-Evidence, Limits, Open Questions.",
   "Do not reply with a completion summary, file path, or write-status report.",
+  "Do not append any menu, numbered options, bot handoff, or next-step choices.",
 ].join("\n");
 
 const STEP_5_MAIN_MESSAGE = [
@@ -126,7 +127,7 @@ export async function tick(ctx) {
             awaiting_user_choice: "yes",
             active_menu_scope: "step_5_menu",
             active_menu_options:
-              "1=WRITE_NEXT_SENTINEL_ONLY_AND_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK",
+              "1=WRITE_AND_POST_FULL_NEXT_Sx_THEN_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK",
           },
         },
       };

@@ -19,6 +19,7 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("reviewer");
     expect(result.dispatch.key).toBe("step5:100:reviewer");
+    expect(result.dispatch.message).toContain("Do not append any menu");
   });
 
   test("dispatches main only when step 5 is waiting for user choice", async () => {
@@ -42,6 +43,7 @@ describe("singularity supervisor adapter", () => {
       awaiting_user_choice: "yes",
       active_menu_scope: "step_5_menu",
     });
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("WRITE_AND_POST_FULL_NEXT_Sx");
   });
 
   test("dispatches writer for step 7 drafting", async () => {
