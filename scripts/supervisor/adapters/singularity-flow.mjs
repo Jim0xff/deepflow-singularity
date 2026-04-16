@@ -10,7 +10,8 @@ const STEP_5_REVIEWER_MESSAGE = [
   "Append the full reviewer output to interaction_log.md.",
   "Group reply must be the full counter-argument itself: Counter-Argument, Objections, Counter-Evidence, Limits, Open Questions.",
   "Do not reply with a completion summary, file path, or write-status report.",
-  "Do not append any menu, numbered options, bot handoff, or next-step choices.",
+  "Do not show a menu in the group reply.",
+  "Still update status.md to workflow_mode=auto,current_step=step_5_debate,next_actor=main,awaiting_user_choice=yes.",
 ].join("\n");
 
 const STEP_5_MAIN_MESSAGE = [

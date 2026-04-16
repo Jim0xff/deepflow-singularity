@@ -19,7 +19,9 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("reviewer");
     expect(result.dispatch.key).toBe("step5:100:reviewer");
-    expect(result.dispatch.message).toContain("Do not append any menu");
+    expect(result.dispatch.message).toContain("Do not show a menu");
+    expect(result.dispatch.message).toContain("next_actor=main");
+    expect(result.dispatch.afterSuccessPatch).toBeUndefined();
   });
 
   test("dispatches main only when step 5 is waiting for user choice", async () => {
