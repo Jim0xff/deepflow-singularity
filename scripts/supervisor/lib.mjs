@@ -135,12 +135,14 @@ export function runOpenClawAgent({
 
 export function parseAgentPayloadTexts(stdout) {
   const value = String(stdout || "");
-  const candidates = [value];
-  const firstObject = value.indexOf("{");
-  const lastObject = value.lastIndexOf("}");
-  if (firstObject >= 0 && lastObject > firstObject) {
-    candidates.push(value.slice(firstObject, lastObject + 1));
-  }
+  const candidates = [
+    value,
+    ...value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("{") && line.endsWith("}"))
+      .reverse(),
+  ];
 
   for (const candidate of candidates) {
     try {

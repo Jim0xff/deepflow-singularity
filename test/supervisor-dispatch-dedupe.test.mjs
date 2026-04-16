@@ -111,6 +111,20 @@ describe("supervisor dispatch dedupe", () => {
     expect(parseAgentPayloadTexts(stdout)).toEqual(["本轮对垒已完成。"]);
   });
 
+  test("extracts payloads when diagnostic lines contain JSON", () => {
+    const stdout = [
+      JSON.stringify({ level: "info", msg: "startup" }),
+      `[auth] config ${JSON.stringify({ profile: "main" })}`,
+      JSON.stringify({
+        result: {
+          payloads: [{ text: "正文" }],
+        },
+      }),
+    ].join("\n");
+
+    expect(parseAgentPayloadTexts(stdout)).toEqual(["正文"]);
+  });
+
   test("explicit message delivery uses openclaw message send", () => {
     let call;
     const run = sendOpenClawMessage({
