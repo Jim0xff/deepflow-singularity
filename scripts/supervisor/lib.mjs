@@ -134,14 +134,26 @@ export function runOpenClawAgent({
 }
 
 export function parseAgentPayloadTexts(stdout) {
-  try {
-    const parsed = JSON.parse(String(stdout || ""));
-    const payloads = parsed?.result?.payloads;
-    if (!Array.isArray(payloads)) return [];
-    return payloads.map((payload) => String(payload?.text || "").trim()).filter(Boolean);
-  } catch {
-    return [];
+  const value = String(stdout || "");
+  const candidates = [value];
+  const firstObject = value.indexOf("{");
+  const lastObject = value.lastIndexOf("}");
+  if (firstObject >= 0 && lastObject > firstObject) {
+    candidates.push(value.slice(firstObject, lastObject + 1));
   }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const payloads = parsed?.result?.payloads ?? parsed?.payloads;
+      if (Array.isArray(payloads)) {
+        return payloads.map((payload) => String(payload?.text || "").trim()).filter(Boolean);
+      }
+    } catch {
+      // Try the next candidate; stdout may contain non-JSON diagnostic lines.
+    }
+  }
+  return [];
 }
 
 export function stripLegacyActionMenu(text) {

@@ -100,6 +100,17 @@ describe("supervisor dispatch dedupe", () => {
     expect(chunkMessageText("a".repeat(7200))).toHaveLength(3);
   });
 
+  test("extracts agent payloads when stdout has diagnostic log lines", () => {
+    const stdout = [
+      "[agents/auth-profiles] inherited auth-profiles from main agent",
+      JSON.stringify({
+        payloads: [{ text: "本轮对垒已完成。" }],
+      }),
+    ].join("\n");
+
+    expect(parseAgentPayloadTexts(stdout)).toEqual(["本轮对垒已完成。"]);
+  });
+
   test("explicit message delivery uses openclaw message send", () => {
     let call;
     const run = sendOpenClawMessage({
