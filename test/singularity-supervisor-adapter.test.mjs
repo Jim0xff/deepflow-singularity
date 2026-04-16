@@ -95,6 +95,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("4. 退出当前项目");
     expect(result.dispatch.message).toContain("1. 生成正式版文章");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(workflow_mode=auto,next_actor=final_writer");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("final_writer_mode=generate");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("4=EXIT_CURRENT_PROJECT");
   });
 
@@ -112,6 +113,7 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("final_writer");
     expect(result.dispatch.key).toBe("step7:106:final_writer:main");
+    expect(result.dispatch.message).toContain("Use output.md as the only article base");
     expect(result.dispatch.suppressDelivery).toBe(true);
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
@@ -121,26 +123,135 @@ describe("singularity supervisor adapter", () => {
       next_actor: "main",
       awaiting_user_choice: "no",
       final_article_ready: "yes",
+      final_writer_mode: "",
     });
   });
 
-  test("returns final writer to reviewer during final review loop", async () => {
+  test("dispatches final writer revision with latest final feedback and review blocks only", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-revise-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## old-draft",
+        "role=editor | target=writer",
+        "### instruction",
+        "草稿阶段旧意见",
+        "",
+        "## final-feedback",
+        "role=editor | type=step_7_feedback | target=final_writer",
+        "### instruction",
+        "主编反馈：中文。",
+        "",
+        "## final-review",
+        "role=reviewer | review_target=final",
+        "verdict=changes_requested",
+        "### Should Fix",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "english final", "utf8");
+
     const result = await tick({
-      projectDir: "/tmp/project",
+      projectDir,
+      statusMtimeMs: 1061,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.message).toContain("Use final-output.md as the only article base");
+    expect(result.dispatch.message).toContain("主编反馈：中文。");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+    expect(result.dispatch.message).not.toContain("草稿阶段旧意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("waits for final editor feedback block before dispatching final writer revision", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-missing-feedback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## old-draft",
+        "role=editor | target=writer",
+        "### instruction",
+        "草稿阶段旧意见",
+        "",
+        "## final-review",
+        "role=reviewer | review_target=final",
+        "verdict=changes_requested",
+        "### Should Fix",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "english final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1062,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch).toBeUndefined();
+    expect(result.runtimePatch).toMatchObject({
+      last_decision: "step7_final_writer_wait_editor_feedback",
+      last_error: "final_editor_feedback_missing",
+    });
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("returns final writer to reviewer during final review loop without requiring editor block", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-reviewer-loop-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## final-review",
+        "role=reviewer | review_target=final",
+        "verdict=changes_requested",
+        "### Should Fix",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "english final", "utf8");
+
+    const result = await tick({
+      projectDir,
       statusMtimeMs: 107,
       status: {
         workflow_mode: "auto",
         current_step: "step_7_drafting",
         next_actor: "final_writer",
         after_final_writer: "reviewer",
+        final_writer_mode: "revise",
       },
     });
 
     expect(result.dispatch.key).toBe("step7:107:final_writer:reviewer");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
       next_actor: "reviewer",
       final_article_ready: "no",
+      final_writer_mode: "",
     });
+
+    await rm(projectDir, { recursive: true, force: true });
   });
 
   test("posts final article menu after final writer", async () => {
@@ -164,6 +275,7 @@ describe("singularity supervisor adapter", () => {
     });
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(docs_publish_requested=yes");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("next_actor=final_writer");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("final_writer_mode=revise");
   });
 
   test("blocks final review until final-output exists", async () => {

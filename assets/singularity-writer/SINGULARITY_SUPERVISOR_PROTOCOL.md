@@ -19,6 +19,7 @@ All fields live in `/.openclaw/shared/projects/<project_id>/status.md`.
 - `final_article_ready: yes | no`
 - `review_target: draft | final`
 - `after_final_writer: main | reviewer`
+- `final_writer_mode: "" | generate | revise`
 - `docs_publish_requested: yes | no`
 - `docs_publish_state: pending | syncing | done | failed`
 

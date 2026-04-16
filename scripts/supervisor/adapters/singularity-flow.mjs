@@ -36,12 +36,12 @@ const STEP_7_WRITER_MESSAGE = [
   "Do not append any menu, bot handoff options, or @bot instructions.",
 ].join("\n");
 
-const STEP_7_FINAL_WRITER_MESSAGE = [
+const STEP_7_FINAL_WRITER_GENERATE_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
   "Current step: step_7_drafting",
-  "Read project.md, status.md, handoff.md, interaction_log.md, materials.md, output.md, final-output.md, and draft_review_history.md.",
-  "Use output.md as the approved draft and final-output.md as the latest formal version if it exists.",
+  "Read status.md, handoff.md, and output.md.",
+  "Use output.md as the only article base for this first formal pass.",
   "Write the complete formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
   "Do not overwrite output.md.",
   "Do not append any menu, bot handoff options, or @bot instructions.",
@@ -88,6 +88,74 @@ function projectFileHasContent(projectDir, relativePath) {
   } catch {
     return false;
   }
+}
+
+function readProjectText(projectDir, relativePath) {
+  try {
+    return fs.readFileSync(path.join(projectDir, relativePath), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function markdownBlocks(text) {
+  return String(text || "")
+    .trim()
+    .replace(/\r\n/g, "\n")
+    .split(/\n(?=##\s)/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function latestMatchingBlock(text, matcher) {
+  const blocks = markdownBlocks(text);
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (matcher(blocks[index])) return blocks[index];
+  }
+  return "";
+}
+
+function latestFinalEditorFeedback(projectDir) {
+  return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+    /target\s*[:=_-]\s*final_writer\b/i.test(block) && /role\s*[:=_-]\s*editor\b/i.test(block)
+  );
+}
+
+function latestFinalReviewerReview(projectDir) {
+  return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+    /review_target\s*[:=_-]\s*final\b/i.test(block) && /role\s*[:=_-]\s*reviewer\b/i.test(block)
+  );
+}
+
+function finalWriterMode(status = {}) {
+  return String(status.final_writer_mode || "").trim().toLowerCase() === "revise" ? "revise" : "generate";
+}
+
+function buildFinalWriterMessage(ctx) {
+  const mode = finalWriterMode(ctx.status);
+  if (mode !== "revise") {
+    return fill(STEP_7_FINAL_WRITER_GENERATE_MESSAGE, ctx.projectDir);
+  }
+
+  const latestEditorFeedback = latestFinalEditorFeedback(ctx.projectDir) || "(none)";
+  const latestReviewerReview = latestFinalReviewerReview(ctx.projectDir) || "(none)";
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_7_drafting",
+    "Read status.md, handoff.md, and final-output.md.",
+    "Use final-output.md as the only article base for this revision.",
+    "Do not read output.md, do not reuse draft-stage review history, and do not bring back older draft-stage feedback.",
+    "Apply only the latest final-stage editor feedback block and the latest final-stage reviewer block pasted below.",
+    "Write the full revised formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
+    "Do not append any menu, bot handoff options, or @bot instructions.",
+    "",
+    "Latest final-stage editor feedback block:",
+    latestEditorFeedback,
+    "",
+    "Latest final-stage reviewer block:",
+    latestReviewerReview,
+  ].join("\n");
 }
 
 export async function tick(ctx) {
@@ -139,15 +207,34 @@ export async function tick(ctx) {
 
   if (currentStep === "step_7_drafting") {
     if (nextActor === "final_writer") {
+      const mode = finalWriterMode(ctx.status);
       const afterFinalWriter = String(ctx.status.after_final_writer || "main").trim();
       const nextAfterFinalWriter = afterFinalWriter === "reviewer" ? "reviewer" : "main";
+      if (mode === "revise" && !projectFileHasContent(ctx.projectDir, "final-output.md")) {
+        return {
+          delayMs: 15_000,
+          runtimePatch: {
+            last_decision: "step7_final_writer_wait_final_output",
+            last_error: "final_output_missing_for_revision",
+          },
+        };
+      }
+      if (mode === "revise" && nextAfterFinalWriter === "main" && !latestFinalEditorFeedback(ctx.projectDir)) {
+        return {
+          delayMs: 15_000,
+          runtimePatch: {
+            last_decision: "step7_final_writer_wait_editor_feedback",
+            last_error: "final_editor_feedback_missing",
+          },
+        };
+      }
       return {
         delayMs: 10_000,
         runtimePatch: { last_decision: "dispatch_step7_final_writer" },
         dispatch: {
           key: `step7:${ctx.statusMtimeMs}:final_writer:${nextAfterFinalWriter}`,
           actor: "final_writer",
-          message: fill(STEP_7_FINAL_WRITER_MESSAGE, ctx.projectDir),
+          message: buildFinalWriterMessage(ctx),
           suppressDelivery: true,
           stripLegacyActionMenu: true,
           deliverRequiresChangedFile: true,
@@ -158,6 +245,7 @@ export async function tick(ctx) {
             next_actor: nextAfterFinalWriter,
             awaiting_user_choice: "no",
             final_article_ready: nextAfterFinalWriter === "main" ? "yes" : "no",
+            final_writer_mode: "",
           },
         },
       };
@@ -180,6 +268,7 @@ export async function tick(ctx) {
             awaiting_user_choice: "no",
             final_article_ready: "no",
             review_target: "draft",
+            final_writer_mode: "",
           },
         },
       };
@@ -230,8 +319,8 @@ export async function tick(ctx) {
             awaiting_user_choice: "yes",
             active_menu_scope: finalArticleReady ? "step_7_final_menu" : "step_7_menu",
             active_menu_options: finalArticleReady
-              ? "1=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final);4=EXIT_CURRENT_PROJECT"
-              : "1=SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final);2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no,final_article_ready=no,review_target=draft);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft);4=EXIT_CURRENT_PROJECT",
+              ? "1=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=);4=EXIT_CURRENT_PROJECT"
+              : "1=SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate);2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no,final_article_ready=no,review_target=draft,final_writer_mode=);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=);4=EXIT_CURRENT_PROJECT",
           },
         },
       };

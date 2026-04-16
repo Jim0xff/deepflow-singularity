@@ -208,6 +208,8 @@ function verdictPatch(verdict, status = {}) {
       next_actor: "main",
       awaiting_user_choice: "no",
       final_article_ready: isFinalReview ? "yes" : "no",
+      final_writer_mode: "",
+      after_final_writer: "",
     };
   }
   return {
@@ -216,6 +218,8 @@ function verdictPatch(verdict, status = {}) {
     next_actor: isFinalReview ? "final_writer" : "writer",
     awaiting_user_choice: "no",
     final_article_ready: "no",
+    review_target: isFinalReview ? "final" : "draft",
+    final_writer_mode: isFinalReview ? "revise" : "",
     after_final_writer: isFinalReview ? "reviewer" : "",
   };
 }

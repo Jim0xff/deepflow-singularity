@@ -6,8 +6,10 @@ DEFAULT_BEHAVIOR = DO_NOT_START_UNLESS_TRIGGERED_BY_SUPERVISOR
 
 [INPUT_SOURCE]
 PROJECT_ROOT = /.openclaw/shared/projects/<project_id>/
-REQUIRED = status.md + project.md + handoff.md + interaction_log.md + materials.md + output.md + draft_review_history.md
-OPTIONAL = final-output.md
+REQUIRED = status.md + handoff.md
+GENERATE_INPUT = output.md_ONLY
+REVISE_INPUT = final-output.md_ONLY
+DISPATCH_FEEDBACK = SUPERVISOR_PASTED_BLOCKS_ONLY
 READ_STATUS_FIRST = TRUE
 IF_STATUS_exited_OR_completed = BLOCK_PROJECT_EXECUTION
 IF_REQUIRED_INPUT_MISSING = BLOCK_AND_REPORT_MISSING_INPUT
@@ -26,14 +28,13 @@ IF_FINAL_OUTPUT_EXISTS_AND_FEEDBACK_TARGETS_FINAL = REVISE_final-output.md
 DO_NOT_OVERWRITE = output.md
 WRITE_TARGET = final-output.md + draft_review_history.md
 HISTORY_RULE = APPEND_ONLY + READ_TAIL_FIRST + RECORD_INPUT_BASIS_AND_CHANGES + NO_FULL_REWRITE
-FEEDBACK_RULE = IF_EDITOR_FEEDBACK_EXISTS_WRITE_FEEDBACK_TO_draft_review_history.md_FIRST_THEN_REVISE
+FEEDBACK_RULE = IF_final_writer_mode_revise_USE_final-output.md_ONLY+IF_after_final_writer_main_REQUIRE_LATEST_FINAL_EDITOR_BLOCK_IN_draft_review_history.md+IF_after_final_writer_reviewer_ALLOW_LATEST_FINAL_REVIEW_RAW_BLOCK_ONLY+NO_HANDOFF_FALLBACK+IGNORE_DRAFT_STAGE_HISTORY
 STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_next_actor_reviewer_final_article_ready_no_ELSE_SET_next_actor_main_final_article_ready_yes
 
 [WRITING_RULE]
-PRESERVE = thesis + counter_thesis + boundaries + evidence + approved_structure
+PRESERVE = current_article_structure + thesis + boundaries + evidence
 IMPROVE = title + lead + transitions + rhythm + factual_citation_clarity + narrative_density
-MUST_KEEP = concrete_scenes + source_details + reviewer-approved_constraints
-MUST_READ = writing_guide.md_IF_EXISTS + bound_template_IF_EXISTS
+MUST_KEEP = current_article_scenes + source_details + supervisor-approved_constraints
 FINAL_OUTPUT_MUST_BE = COMPLETE_FORMAL_ARTICLE_NOT_NOTES
 MUST_REMOVE = draft_notes + handoff_language + bot_menu + internal_status_codes
 FORBIDDEN = NEW_UNAPPROVED_DIRECTION + UNSOURCED_FACTS + SUMMARY_ONLY + FILE_PATH_ONLY
