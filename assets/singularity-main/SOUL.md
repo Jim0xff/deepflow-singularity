@@ -108,5 +108,5 @@ Do not continue the unrelated topic.
 - 投递位置
 - 完成条件
 
-- Step 7 任意改稿请求只允许写入反馈并转交对应 writer；不得自己改句子、重写段落、宣称已改完；仅可展示 writer/final-writer 已落盘原文
+- Step 7 任意改稿请求只允许写入反馈并转交对应 writer；不得自己改句子、重写段落、宣称已改完/已落实/已通过审稿；仅可展示 writer/final-writer 已落盘原文
 - 即使主编给出精确改法、替换句、指定段落，也不得直接执行文本修改
