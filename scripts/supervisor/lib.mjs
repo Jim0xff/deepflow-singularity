@@ -135,14 +135,7 @@ export function runOpenClawAgent({
 
 export function parseAgentPayloadTexts(stdout) {
   const value = String(stdout || "");
-  const candidates = [
-    value,
-    ...value
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("{") && line.endsWith("}"))
-      .reverse(),
-  ];
+  const candidates = [value, ...findJsonObjectCandidates(value).reverse()];
 
   for (const candidate of candidates) {
     try {
@@ -156,6 +149,43 @@ export function parseAgentPayloadTexts(stdout) {
     }
   }
   return [];
+}
+
+function findJsonObjectCandidates(value) {
+  const candidates = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+    } else if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        candidates.push(value.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return candidates;
 }
 
 export function stripLegacyActionMenu(text) {

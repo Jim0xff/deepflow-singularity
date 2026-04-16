@@ -125,6 +125,24 @@ describe("supervisor dispatch dedupe", () => {
     expect(parseAgentPayloadTexts(stdout)).toEqual(["正文"]);
   });
 
+  test("extracts pretty printed payload after diagnostic JSON", () => {
+    const stdout = [
+      JSON.stringify({ level: "info", msg: "startup" }),
+      "[auth] config {\"profile\":\"main\"}",
+      JSON.stringify(
+        {
+          result: {
+            payloads: [{ text: "pretty 正文 {不是日志}" }],
+          },
+        },
+        null,
+        2,
+      ),
+    ].join("\n");
+
+    expect(parseAgentPayloadTexts(stdout)).toEqual(["pretty 正文 {不是日志}"]);
+  });
+
   test("explicit message delivery uses openclaw message send", () => {
     let call;
     const run = sendOpenClawMessage({

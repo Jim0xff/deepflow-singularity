@@ -142,6 +142,13 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
     const block = latestMarkdownBlock(readText(path.join(dispatch.projectDir, dispatch.deliverFromChangedFile)));
     if (block) texts = [block];
   }
+  if (!texts.length) {
+    nextRuntime.last_delivery_count = 0;
+    nextRuntime.last_delivery_failed_count = 1;
+    nextRuntime.last_delivery_at = "";
+    nextRuntime.last_delivery_error = "no_payload_text";
+    return { ok: false, sent: 0, failed: 1 };
+  }
   const sent = [];
   const failed = [];
 
