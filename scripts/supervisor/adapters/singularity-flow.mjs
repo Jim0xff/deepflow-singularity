@@ -36,17 +36,6 @@ const STEP_7_WRITER_MESSAGE = [
   "Do not append any menu, bot handoff options, or @bot instructions.",
 ].join("\n");
 
-const STEP_7_FINAL_WRITER_GENERATE_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_7_drafting",
-  "Read status.md, handoff.md, and output.md.",
-  "Use output.md as the only article base for this first formal pass.",
-  "Write the complete formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
-  "Do not overwrite output.md.",
-  "Do not append any menu, bot handoff options, or @bot instructions.",
-].join("\n");
-
 const STEP_7_REVIEWER_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
@@ -133,21 +122,21 @@ function finalWriterMode(status = {}) {
 
 function buildFinalWriterMessage(ctx) {
   const mode = finalWriterMode(ctx.status);
-  if (mode !== "revise") {
-    return fill(STEP_7_FINAL_WRITER_GENERATE_MESSAGE, ctx.projectDir);
-  }
-
   const latestEditorFeedback = latestFinalEditorFeedback(ctx.projectDir) || "(none)";
   const latestReviewerReview = latestFinalReviewerReview(ctx.projectDir) || "(none)";
+  const revise = mode === "revise";
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_7_drafting",
-    "Read status.md, handoff.md, and final-output.md.",
-    "Use final-output.md as the only article base for this revision.",
-    "Do not read output.md, do not reuse draft-stage review history, and do not bring back older draft-stage feedback.",
-    "Apply only the latest final-stage editor feedback block and the latest final-stage reviewer block pasted below.",
-    "Write the full revised formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
+    `Read status.md, handoff.md, and ${revise ? "final-output.md" : "output.md"}.`,
+    revise
+      ? "Use final-output.md as the only article base for this formal revision."
+      : "Use output.md as the only article base for this first formal pass.",
+    "Apply only the final-stage feedback blocks pasted below.",
+    "Do not reuse draft-stage review history or older draft-stage feedback.",
+    "Write the full formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
+    "Do not overwrite output.md.",
     "Do not append any menu, bot handoff options, or @bot instructions.",
     "",
     "Latest final-stage editor feedback block:",

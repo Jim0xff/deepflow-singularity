@@ -114,6 +114,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("final_writer");
     expect(result.dispatch.key).toBe("step7:106:final_writer:main");
     expect(result.dispatch.message).toContain("Use output.md as the only article base");
+    expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:");
     expect(result.dispatch.suppressDelivery).toBe(true);
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
@@ -168,6 +169,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("Use final-output.md as the only article base");
     expect(result.dispatch.message).toContain("主编反馈：中文。");
     expect(result.dispatch.message).toContain("补一条正式稿意见");
+    expect(result.dispatch.message).toContain("Do not reuse draft-stage review history");
     expect(result.dispatch.message).not.toContain("草稿阶段旧意见");
 
     await rm(projectDir, { recursive: true, force: true });
@@ -245,6 +247,7 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.key).toBe("step7:107:final_writer:reviewer");
     expect(result.dispatch.message).toContain("补一条正式稿意见");
+    expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:\n(none)");
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
       next_actor: "reviewer",
       final_article_ready: "no",
