@@ -139,16 +139,16 @@ STEP_6_STATE = WRITE_handoff.md + STATUS_step_6_feedback + NEXT_step_7_drafting 
 IF_NOT_RECORDED = BLOCK_NEXT_STEP
 
 [STEP_7_DRAFTING]
-ROLE_RULE = SUPERVISOR_ONLY+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_output/final-output+writer->output.md+final_writer->final-output.md+reviewer->draft_review_history.md
-TEMPLATE_RULE = IF_TEMPLATE_ID_EXISTS_TELL_WRITER_READ + IF_MISSING_ASK_TEMPLATE_PREFERENCE_FIRST
+ROLE_RULE = SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_output/final-output+writer->output.md+final_writer->final-output.md+reviewer->draft_review_history.md
+TEMPLATE_RULE = IF_TEMPLATE_ID_EXISTS_TELL_WRITER_READ+IF_MISSING_ASK_TEMPLATE_PREFERENCE_FIRST
 WRITE_RULE = handoff.md_ONLY
-REPLY_RULE = ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY + DRAFT_APPROVAL_NO_ARTICLE_OUTPUT + FINAL_WRITER_DONE_POST_FULL_final-output.md
-USER_TRIGGER_RULE = step_7_menu_CHANGE_OR_2TEXT->WRITE_FEEDBACK_ONLY+SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft)+step_7_final_menu_CHANGE_OR_2TEXT->WRITE_FEEDBACK_ONLY+SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final)+NO_MAIN_READ_OUTPUT_OR_CLAIM_DONE+RE_REVIEW->REVIEWER+START_NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
+REPLY_RULE = ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
+USER_TRIGGER_RULE = step_7_menu_CHANGE_OR_2TEXT->WRITE_FEEDBACK_ONLY+SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft)+step_7_final_menu_CHANGE_OR_2TEXT->WRITE_FEEDBACK_ONLY+SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final)+NO_MAIN_REWRITE_POST_DONE_CLAIM+RE_REVIEW->REVIEWER+START_NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS = step_7_drafting
 STEP_7_STATE = ON_ENTER->SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 AUTO_STATUS_RULE = IF_auto_next_actor_writer_reviewer_final_writer->NO_BOT_UNAVAILABLE
 APPROVAL_RETURN_RULE = DRAFT_APPROVED->MAIN_MENU(1生成正式版;2修改;3审稿;4退出)
-FINAL_DELIVERY_RULE = FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+step_7_final_menu + ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
+FINAL_DELIVERY_RULE = FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+step_7_final_menu+ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
 
 [CONTROL_RULES]
 IF_ACTION = 上一步 -> WRITE_STAGE + LOG_TRANSITION + GO_PREVIOUS_STEP + KEEP_RECORDS + UPDATE_STATUS
