@@ -30,7 +30,7 @@ SHARED_WRITE=ROOT_/.openclaw/shared/+DIRECT_ONLY+NO_WORKSPACE_MIRRORS+NO_MANUAL_
 HISTORY_FILES=interaction_log.md+draft_review_history.md+handoff.md->APPEND_ONLY+NO_FULL_REWRITE+READ_TAIL_FIRST
 PROCESS_FILE_VS_RESULT_FILE_RULE=PROCESS(interaction_log.md+draft_review_history.md+handoff.md)=APPEND_FULL_BLOCKS_NOT_SUMMARY+RESULT(materials.md+output.md+final-output.md)=LATEST_FULL_RESULT_ONLY
 REUSABLE_CAPTURE=EXPLICIT_ONLY+ALIASES(存到知识库|写进知识库|保存模板|保存门禁|保存写作规则|保存写作法则|保存写作铁律|保存修稿模式)+TYPE(模板=template|门禁=review_gate|修稿=repair_pattern|写作|法则|铁律=writing_rule|unknown=ASK_TYPE)+AUTO_SLUG_IF_ID_MISSING+PAUSE_OTHER_ACTIONS+WRITE_SHARED_FIRST
-TEMPLATE_LIBRARY=ROOT_/.openclaw/shared/templates/+FILES_index.md_articles/<template_id>.md+BIND_project.md.template_id+handoff.md.template_id+IF_TEMPLATE_ID_EXISTS_WRITER_REVIEWER_MUST_READ+IF_MISSING_NO_BLOCK_STEP_7+CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+FORBID_project_local_templates
+TEMPLATE_LIBRARY=ROOT_/.openclaw/shared/templates/+FILES_index.md_articles/<template_id>.md+BIND_project.md.template_id+handoff.md.template_id+TEMPLATE_OPTIONAL+STEP6_GATE_DECIDES_ENTRY+IF_TEMPLATE_ID_EXISTS_WRITER_REVIEWER_MUST_READ+CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+FORBID_project_local_templates
 KNOWLEDGE_LIBRARY=ROOT_/.openclaw/shared/knowledge/+TARGETS(writing_rule->writing_rules/<slug>.md|review_gate->review_gates/<slug>.md|repair_pattern->repair_patterns/<slug>.md)+CAPTURE(writing_rule|review_gate|repair_pattern)_BY_MAIN_AFTER_EDITOR_CONFIRM+SOURCE(output.md+final-output.md+draft_review_history.md+handoff.md)+NO_AUTO_INGEST+NO_STEP7_AGENT_SHARED_WRITE+REPORT_EXACT_PATH
 PROJECT_RECORDING=PRIMARY_interaction_log.md+SOURCE_MATERIAL->materials.md+MAIN_STAGE_HANDOFF->handoff.md+STEP7_AGENTS->output.md/final-output.md/draft_review_history.md+NO_SUMMARY_ONLY+NO_CONCLUSION_WITHOUT_PROCESS+USER_SAID_RECORD_IT_AND_NOT_WRITTEN=VIOLATION
 [GROUP_ROLE_MAP]
@@ -62,7 +62,7 @@ MENU_SCOPE=step_5_menu
 OPTIONS=1=WRITE_AND_POST_FULL_NEXT_Sx_THEN_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no)+2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK
 [STEP_6_MENU]
 MENU_SCOPE=step_6_menu
-OPTIONS=1=WRITE_HANDOFF_AND_SET_AUTO_STEP_7_WRITER_ONLY+2=MODIFY_STEP_6_FEEDBACK_AND_SHOW_FULL_OUTPUT_AND_KEEP_STEP_6+3=WRITE_CURRENT_STAGE_RESULT_AND_RETURN_TO_STEP_5
+OPTIONS=1=PASS_TEMPLATE_GATE_THEN_WRITE_HANDOFF_AND_SET_AUTO_STEP_7_WRITER_ONLY+2=MODIFY_STEP_6_FEEDBACK_AND_SHOW_FULL_OUTPUT_AND_KEEP_STEP_6+3=WRITE_CURRENT_STAGE_RESULT_AND_RETURN_TO_STEP_5
 [STEP_7_MENU]
 MENU_SCOPE=step_7_menu
 OPTIONS=1=GENERATE_FINAL_AUTO+2=FEEDBACK_TO_WRITER_AUTO+3=REVIEWER_AUTO+4=EXIT_CURRENT_PROJECT
@@ -121,7 +121,7 @@ STEP_6_STATE=WRITE_handoff.md+STATUS_step_6_feedback+NEXT_step_7_drafting+MENU_s
 IF_NOT_RECORDED=BLOCK_NEXT_STEP
 [STEP_7_DRAFTING]
 ROLE_RULE=SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_output/final-output+writer->output.md+final_writer->final-output.md+reviewer->draft_review_history.md
-TEMPLATE_RULE=IF_TEMPLATE_ID_EXISTS_TELL_WRITER_READ+IF_MISSING_ASK_TEMPLATE_PREFERENCE_FIRST
+TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_MISSING->ASK_AND_BLOCK_STEP7(template:<id>|无模板|save_template:<id>)+template:<id>->BIND_project.md.template_id+handoff.md.template_id+ENTER_STEP7+无模板->CLEAR_project.md.template_id+handoff.md.template_id+ENTER_STEP7+save_template:<id>->CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+BIND_project.md.template_id+handoff.md.template_id+ENTER_STEP7
 WRITE_RULE=STEP7_DRAFT_FEEDBACK->handoff.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
 FINAL_EDITOR_BLOCK_RULE=role=editor+type=step_7_feedback+target=final_writer+instruction=USER_TEXT
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
