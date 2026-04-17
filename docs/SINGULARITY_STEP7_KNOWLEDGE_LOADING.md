@@ -26,8 +26,9 @@ Manual capture triggers handled by `main`:
 flowchart LR
   subgraph KB["Shared Knowledge (human maintained)"]
     T["templates/<br/>structure templates"]
-    W["writing_guide.md<br/>writing guide and anchors"]
-    G["review_gates.md<br/>gates, pass rules, repair rules"]
+    W["knowledge/writing_rules/<br/>writing rules and anchors"]
+    G["knowledge/review_gates/<br/>review gates"]
+    RP["knowledge/repair_patterns/<br/>repair patterns"]
   end
 
   subgraph P["Project Files (runtime)"]
@@ -51,6 +52,7 @@ flowchart LR
   W --> DW
 
   G --> R
+  RP --> R
   T --> R
 
   H --> DW
@@ -104,7 +106,7 @@ sequenceDiagram
   DW->>P: read handoff.md
   DW->>P: read output.md
   DW->>P: read draft_review_history.md
-  DW->>DW: read templates and writing_guide.md
+  DW->>DW: read templates and knowledge/writing_rules/
   DW->>P: write output.md
   DW->>P: append draft_review_history.md
   DW->>P: write status.md(next_actor=reviewer)
@@ -112,7 +114,7 @@ sequenceDiagram
   S->>R: dispatch reviewer for draft
   R->>P: read output.md
   R->>P: read draft_review_history.md
-  R->>R: read review_gates.md
+  R->>R: read knowledge/review_gates/ and knowledge/repair_patterns/
   R->>R: read bound template
   R->>P: append draft_review_history.md(verdict and issues)
   R->>P: write status.md(next_actor=writer or main)
@@ -133,7 +135,7 @@ sequenceDiagram
   S->>R: dispatch reviewer for final
   R->>P: read final-output.md
   R->>P: read draft_review_history.md
-  R->>R: read review_gates.md
+  R->>R: read knowledge/review_gates/ and knowledge/repair_patterns/
   R->>P: append draft_review_history.md
   R->>P: write status.md(next_actor=final_writer or main)
 
@@ -154,9 +156,10 @@ sequenceDiagram
 ```mermaid
 flowchart TD
   T["templates/"] --> DW["draft-writer"]
-  W["writing_guide.md"] --> DW
+  W["knowledge/writing_rules/"] --> DW
 
-  G["review_gates.md"] --> R["reviewer"]
+  G["knowledge/review_gates/"] --> R["reviewer"]
+  RP["knowledge/repair_patterns/"] --> R
   T --> R
 
   O["output.md or final-output.md"] --> FW["final-writer"]
@@ -164,8 +167,8 @@ flowchart TD
   S["status.md"] --> FW
 
   X1["does not read templates directly"] -.-> FW
-  X2["does not read writing_guide.md directly"] -.-> FW
-  X3["does not read full review_gates.md"] -.-> FW
+  X2["does not read knowledge/writing_rules/ directly"] -.-> FW
+  X3["does not read review_gates/ or repair_patterns/ directly"] -.-> FW
 ```
 
 ## Knowledge Maintenance
@@ -174,8 +177,9 @@ flowchart TD
 flowchart TD
   H["Human or Editor"] --> M["main"]
   M --> T["templates/"]
-  M --> W["writing_guide.md"]
-  M --> G["review_gates.md"]
+  M --> W["knowledge/writing_rules/"]
+  M --> G["knowledge/review_gates/"]
+  M --> RP["knowledge/repair_patterns/"]
 
   RUNTIME["Step 7 runtime"] --> O["output.md"]
   RUNTIME --> F["final-output.md"]
@@ -188,10 +192,10 @@ flowchart TD
 ## Read and Write Boundaries
 
 - `draft-writer`
-  - Reads: `handoff.md`, `output.md`, `draft_review_history.md`, `templates`, `writing_guide.md`
+  - Reads: `handoff.md`, `output.md`, `draft_review_history.md`, `templates`, `knowledge/writing_rules/`
   - Writes: `output.md`, `draft_review_history.md`, `status.md`
 - `reviewer`
-  - Reads: current article file, `draft_review_history.md`, bound template, `review_gates.md`
+  - Reads: current article file, `draft_review_history.md`, bound template, `knowledge/review_gates/`, `knowledge/repair_patterns/`
   - Writes: `draft_review_history.md`, `status.md`
 - `final-writer`
   - Reads on first formal pass: `output.md`, `status.md`, latest final-stage instructions assembled by supervisor

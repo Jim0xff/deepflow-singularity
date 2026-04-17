@@ -29,12 +29,12 @@ PROJECT_DIR = /.openclaw/shared/projects/<project_id>/
 PROJECT_FILES = REQUIRED_project.md+status.md+interaction_log.md+materials.md+output.md+final-output.md+handoff.md+draft_review_history.md + SAME_PROJECT_ID + CREATE_IF_MISSING + BLOCK_AND_REPAIR_IF_MISMATCH
 
 [SHARED_RECORDING]
-SHARED_WRITE = ROOT_/.openclaw/shared/ + DIRECT_ONLY + NO_WORKSPACE_MIRRORS + NO_MANUAL_COPY + APPLIES_memory_role_map_pointers_project_files_templates + REPORT_EXACT_PATH_ON_FAIL
+SHARED_WRITE = ROOT_/.openclaw/shared/ + DIRECT_ONLY + NO_WORKSPACE_MIRRORS + NO_MANUAL_COPY + APPLIES_memory_role_map_pointers_project_files_templates_knowledge_libraries + REPORT_EXACT_PATH_ON_FAIL
 HISTORY_FILES = interaction_log.md + draft_review_history.md + handoff.md -> APPEND_ONLY + NO_FULL_REWRITE + READ_TAIL_FIRST
 PROCESS_FILE_VS_RESULT_FILE_RULE = PROCESS(interaction_log.md+draft_review_history.md+handoff.md)=APPEND_FULL_BLOCKS_NOT_SUMMARY + RESULT(materials.md+output.md+final-output.md)=LATEST_FULL_RESULT_ONLY
 REUSABLE_CAPTURE = EXPLICIT_ONLY+ALIASES(存到知识库|写进知识库|保存模板|保存门禁|保存写作规则|保存写作法则|保存写作铁律|保存修稿模式)+TYPE(模板=template|门禁=review_gate|修稿=repair_pattern|写作|法则|铁律=writing_rule|unknown=ASK_TYPE)+AUTO_SLUG_IF_ID_MISSING+PAUSE_OTHER_ACTIONS+WRITE_SHARED_FIRST
 TEMPLATE_LIBRARY = ROOT_/.openclaw/shared/templates/+FILES_index.md_articles/<template_id>.md+BIND_project.md.template_id+handoff.md.template_id+IF_TEMPLATE_ID_EXISTS_WRITER_REVIEWER_MUST_READ+IF_MISSING_NO_BLOCK_STEP_7+CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+FORBID_project_local_templates
-KNOWLEDGE_LIBRARY = ROOT_/.openclaw/shared/knowledge/+CAPTURE(writing_rule|review_gate|repair_pattern)_BY_MAIN_AFTER_EDITOR_CONFIRM+SOURCE(output.md+final-output.md+draft_review_history.md+handoff.md)+NO_AUTO_INGEST+NO_STEP7_AGENT_SHARED_WRITE+REPORT_EXACT_PATH
+KNOWLEDGE_LIBRARY = ROOT_/.openclaw/shared/knowledge/+TARGETS(writing_rule->writing_rules/<slug>.md|review_gate->review_gates/<slug>.md|repair_pattern->repair_patterns/<slug>.md)+CAPTURE(writing_rule|review_gate|repair_pattern)_BY_MAIN_AFTER_EDITOR_CONFIRM+SOURCE(output.md+final-output.md+draft_review_history.md+handoff.md)+NO_AUTO_INGEST+NO_STEP7_AGENT_SHARED_WRITE+REPORT_EXACT_PATH
 PROJECT_RECORDING = PRIMARY_interaction_log.md + SOURCE_MATERIAL->materials.md + MAIN_STAGE_HANDOFF->handoff.md + STEP7_AGENTS->output.md/final-output.md/draft_review_history.md + NO_SUMMARY_ONLY + NO_CONCLUSION_WITHOUT_PROCESS + USER_SAID_RECORD_IT_AND_NOT_WRITTEN=VIOLATION
 
 [GROUP_ROLE_MAP]
