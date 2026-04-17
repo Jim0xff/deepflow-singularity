@@ -8,8 +8,17 @@ Principles:
 - `reviewer` reads shared gates and review rules.
 - `final-writer` does not read thick shared knowledge directly.
 - `main` does not build an extra `final_packet` file.
+- `main` is the only manual entrypoint for writing reusable knowledge back into shared libraries.
 - `supervisor` assembles the minimal `final-writer` prompt from existing project files.
-- Runtime writes only project files, not shared knowledge libraries.
+- Runtime Step 7 agents write only project files, not shared knowledge libraries.
+
+Manual capture triggers handled by `main`:
+
+- `保存模板`
+- `保存门禁`
+- `保存写作规则 / 保存写作法则 / 保存写作铁律`
+- `保存修稿模式`
+- `存到知识库 / 写进知识库` as generic capture intent; if type is unclear, `main` asks which kind
 
 ## Minimal Architecture
 
@@ -163,16 +172,17 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  H["Human or Editor"] --> T["templates/"]
-  H --> W["writing_guide.md"]
-  H --> G["review_gates.md"]
+  H["Human or Editor"] --> M["main"]
+  M --> T["templates/"]
+  M --> W["writing_guide.md"]
+  M --> G["review_gates.md"]
 
   RUNTIME["Step 7 runtime"] --> O["output.md"]
   RUNTIME --> F["final-output.md"]
   RUNTIME --> D["draft_review_history.md"]
   RUNTIME --> S["status.md"]
 
-  NOTE["Not in scope for now:<br/>- candidate extraction<br/>- auto-ingest into shared KB<br/>- extra final_packet file"]
+  NOTE["Only manual capture via main:<br/>- no auto-ingest into shared KB<br/>- no extra final_packet file<br/>- candidate extraction not in scope"]
 ```
 
 ## Read and Write Boundaries
@@ -189,6 +199,7 @@ flowchart TD
   - Writes: `final-output.md`, `draft_review_history.md`, `status.md`
 - `main`
   - Writes only state and user raw feedback
+  - Is the only manual entry for saving reusable Step 7 knowledge into shared libraries
   - Does not build a dedicated `final_packet` file
   - Does not write article body
 
