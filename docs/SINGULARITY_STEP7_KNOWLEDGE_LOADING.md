@@ -107,6 +107,7 @@ sequenceDiagram
   DW->>P: read output.md
   DW->>P: read draft_review_history.md
   DW->>DW: read templates and knowledge/writing_rules/
+  DW->>P: append knowledge-read block(role=writer,type=writing_knowledge_read,sources,apply_points_or_none,read_fail_or_none)
   DW->>P: write output.md
   DW->>P: append draft_review_history.md
   DW->>P: write status.md(next_actor=reviewer)
@@ -115,6 +116,7 @@ sequenceDiagram
   R->>P: read output.md
   R->>P: read draft_review_history.md
   R->>R: read knowledge/review_gates/ and knowledge/repair_patterns/
+  R->>P: append knowledge-read block(role=reviewer,type=review_knowledge_read,sources,apply_points_or_none,read_fail_or_none)
   R->>R: read bound template
   R->>P: append draft_review_history.md(verdict and issues)
   R->>P: write status.md(next_actor=writer or main)
@@ -136,6 +138,7 @@ sequenceDiagram
   R->>P: read final-output.md
   R->>P: read draft_review_history.md
   R->>R: read knowledge/review_gates/ and knowledge/repair_patterns/
+  R->>P: append review-knowledge-read record to draft_review_history.md
   R->>P: append draft_review_history.md
   R->>P: write status.md(next_actor=final_writer or main)
 
@@ -193,10 +196,10 @@ flowchart TD
 
 - `draft-writer`
   - Reads: `handoff.md`, `output.md`, `draft_review_history.md`, `templates`, `knowledge/writing_rules/`
-  - Writes: `output.md`, `draft_review_history.md`, `status.md`
+  - Writes: `output.md`, `draft_review_history.md` (including `role=writer,type=writing_knowledge_read,sources,apply_points_or_none,read_fail_or_none`), `status.md`
 - `reviewer`
   - Reads: current article file, `draft_review_history.md`, bound template, `knowledge/review_gates/`, `knowledge/repair_patterns/`
-  - Writes: `draft_review_history.md`, `status.md`
+  - Writes: `draft_review_history.md` (including `role=reviewer,type=review_knowledge_read,sources,apply_points_or_none,read_fail_or_none`), `status.md`
 - `final-writer`
   - Reads on first formal pass: `output.md`, `status.md`, latest final-stage instructions assembled by supervisor
   - Reads on final revision: `final-output.md`, `status.md`, latest final reviewer block, latest final user block

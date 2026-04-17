@@ -62,10 +62,13 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("writer");
     expect(result.dispatch.key).toBe("step7:102:writer");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/writing_rules/");
+    expect(result.dispatch.message).toContain("type=writing_knowledge_read");
+    expect(result.dispatch.message).toContain("apply_points_or_none=...");
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
     expect(result.dispatch.stripLegacyActionMenu).toBe(true);
-    expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["output.md", "draft_review_history.md"]);
+    expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
+    expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["output.md"]);
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
       workflow_mode: "auto",
       current_step: "step_7_drafting",
@@ -100,6 +103,26 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(workflow_mode=auto,next_actor=final_writer");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("final_writer_mode=generate");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("4=EXIT_CURRENT_PROJECT");
+  });
+
+  test("dispatches reviewer for step 7 with strict review knowledge-read gate", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 1041,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
+    expect(result.dispatch.message).toContain("type=review_knowledge_read");
+    expect(result.dispatch.message).toContain("read_fail_or_none=...");
+    expect(result.dispatch.requireLatestVerdict).toBe(true);
   });
 
   test("dispatches final writer and returns to main with final-output", async () => {
@@ -319,6 +342,8 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("review final-output.md");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
+    expect(result.dispatch.message).toContain("type=review_knowledge_read");
+    expect(result.dispatch.message).toContain("apply_points_or_none=...");
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
 
     await rm(projectDir, { recursive: true, force: true });
