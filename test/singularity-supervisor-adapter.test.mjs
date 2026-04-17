@@ -140,6 +140,8 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("final_writer");
     expect(result.dispatch.key).toBe("step7:106:final_writer:main");
     expect(result.dispatch.message).toContain("Use output.md as the only article base");
+    expect(result.dispatch.message).toContain("FULL_REWRITE_REQUIRED");
+    expect(result.dispatch.message).toContain("Rewrite the whole article into a publication-grade final article");
     expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:");
     expect(result.dispatch.suppressDelivery).toBe(true);
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
@@ -193,6 +195,8 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.message).toContain("Use final-output.md as the only article base");
+    expect(result.dispatch.message).toContain("FULL_REWRITE_REQUIRED");
+    expect(result.dispatch.message).toContain("Removing process notes, translating only, or making partial line edits is not enough");
     expect(result.dispatch.message).toContain("主编反馈：中文。");
     expect(result.dispatch.message).toContain("补一条正式稿意见");
     expect(result.dispatch.message).toContain("Do not reuse draft-stage review history");

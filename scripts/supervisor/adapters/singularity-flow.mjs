@@ -141,6 +141,10 @@ function buildFinalWriterMessage(ctx) {
     revise
       ? "Use final-output.md as the only article base for this formal revision."
       : "Use output.md as the only article base for this first formal pass.",
+    "FULL_REWRITE_REQUIRED: treat the article base as source material, not as near-final copy to lightly edit.",
+    "Rewrite the whole article into a publication-grade final article: rewrite title, lead, transitions, paragraph rhythm, and ending.",
+    "Preserve the approved thesis, evidence chain, literary references, boundaries, and reviewer decisions unless the pasted final-stage feedback explicitly changes them.",
+    "Removing process notes, translating only, or making partial line edits is not enough; final-output.md must be a freshly rewritten final article.",
     "Apply only the final-stage feedback blocks pasted below.",
     "Do not reuse draft-stage review history or older draft-stage feedback.",
     "Write the full formal article to final-output.md and append the full final-writing round to draft_review_history.md.",
