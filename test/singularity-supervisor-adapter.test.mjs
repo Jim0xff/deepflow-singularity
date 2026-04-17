@@ -205,6 +205,49 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches final writer revision when final editor feedback uses markdown field lines", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-markdown-feedback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## final-feedback",
+        "- **id**: F_final_2026-04-17-01",
+        "- **role**: editor",
+        "- **type**: step_7_feedback",
+        "- **target**: final_writer",
+        "- **instruction**: 将当前英文终稿完整转为中文版本。",
+        "",
+        "## final-review",
+        "- **role**: reviewer",
+        "- **review_target**: final",
+        "verdict=changes_requested",
+        "### Should Fix",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "english final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10615,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("将当前英文终稿完整转为中文版本");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("waits for final editor feedback block before dispatching final writer revision", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-missing-feedback-"));
     await writeFile(

@@ -112,15 +112,28 @@ function latestMatchingBlock(text, matcher) {
   return "";
 }
 
+function escapeRegex(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function blockHasField(block, key, value) {
+  const escapedKey = escapeRegex(key);
+  const escapedValue = escapeRegex(value);
+  return new RegExp(
+    `\\b${escapedKey}\\b\\s*[:=_-]\\s*${escapedValue}\\b|(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${escapedKey}(?:\\*\\*)?\\s*[:=_-]\\s*${escapedValue}\\b`,
+    "i"
+  ).test(block);
+}
+
 function latestFinalEditorFeedback(projectDir) {
   return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    /target\s*[:=_-]\s*final_writer\b/i.test(block) && /role\s*[:=_-]\s*editor\b/i.test(block)
+    blockHasField(block, "target", "final_writer") && blockHasField(block, "role", "editor")
   );
 }
 
 function latestFinalReviewerReview(projectDir) {
   return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    /review_target\s*[:=_-]\s*final\b/i.test(block) && /role\s*[:=_-]\s*reviewer\b/i.test(block)
+    blockHasField(block, "review_target", "final") && blockHasField(block, "role", "reviewer")
   );
 }
 
