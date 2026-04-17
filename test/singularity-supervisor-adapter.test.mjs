@@ -61,6 +61,9 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("writer");
     expect(result.dispatch.key).toBe("step7:102:writer");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/writing_rules/");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
+    expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
     expect(result.dispatch.stripLegacyActionMenu).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["output.md", "draft_review_history.md"]);
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
@@ -314,6 +317,9 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("reviewer");
     expect(result.dispatch.message).toContain("review final-output.md");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
 
     await rm(projectDir, { recursive: true, force: true });
   });
