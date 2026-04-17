@@ -99,7 +99,7 @@ function markdownBlocks(text) {
   return String(text || "")
     .trim()
     .replace(/\r\n/g, "\n")
-    .split(/\n(?=##\s)/)
+    .split(/\n(?=(?:##\s|---\n###\s+Round:|###\s+Round:))/)
     .map((block) => block.trim())
     .filter(Boolean);
 }
@@ -117,12 +117,11 @@ function escapeRegex(text) {
 }
 
 function blockHasField(block, key, value) {
-  const escapedKey = escapeRegex(key);
-  const escapedValue = escapeRegex(value);
-  return new RegExp(
-    `\\b${escapedKey}\\b\\s*[:=_-]\\s*${escapedValue}\\b|(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*\\*)?${escapedKey}(?:\\*\\*)?\\s*[:=_-]\\s*${escapedValue}\\b`,
-    "i"
-  ).test(block);
+  const keyPattern = new RegExp(`\\b${escapeRegex(key)}\\b`, "i");
+  const valuePattern = new RegExp(`\\b${escapeRegex(value)}\\b`, "i");
+  return String(block)
+    .split(/\r?\n/)
+    .some((line) => keyPattern.test(line) && valuePattern.test(line));
 }
 
 function latestFinalEditorFeedback(projectDir) {

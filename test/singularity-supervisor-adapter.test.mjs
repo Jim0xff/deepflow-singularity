@@ -5,6 +5,15 @@ import { tmpdir } from "node:os";
 import { tick } from "../scripts/supervisor/adapters/singularity-flow.mjs";
 
 describe("singularity supervisor adapter", () => {
+  function between(text, startMarker, endMarker) {
+    const start = text.indexOf(startMarker);
+    if (start === -1) return "";
+    const from = start + startMarker.length;
+    if (!endMarker) return text.slice(from);
+    const end = text.indexOf(endMarker, from);
+    return text.slice(from, end === -1 ? undefined : end);
+  }
+
   test("dispatches reviewer for step 5 auto debate", async () => {
     const result = await tick({
       projectDir: "/tmp/project",
@@ -244,6 +253,68 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("final_writer");
     expect(result.dispatch.message).toContain("将当前英文终稿完整转为中文版本");
     expect(result.dispatch.message).toContain("补一条正式稿意见");
+    const editorSection = between(
+      result.dispatch.message,
+      "Latest final-stage editor feedback block:\n",
+      "\nLatest final-stage reviewer block:\n"
+    );
+    const reviewerSection = between(result.dispatch.message, "Latest final-stage reviewer block:\n", "");
+    expect(editorSection).toContain("将当前英文终稿完整转为中文版本");
+    expect(editorSection).not.toContain("补一条正式稿意见");
+    expect(reviewerSection).toContain("补一条正式稿意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches final writer revision when markdown field values are wrapped in backticks", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-backtick-feedback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "### Round: 2026-04-17 Final Revision Feedback",
+        "",
+        "- **id**: `F_final_2026-04-17-01`",
+        "- **role**: `editor`",
+        "- **type**: `step_7_feedback`",
+        "- **target**: `final_writer`",
+        "- **instruction**: 将当前英文终稿完整转为中文版本。",
+        "",
+        "### Round: 2026-04-17 Final Review",
+        "- **role**: `reviewer`",
+        "- **review_target**: `final`",
+        "verdict=changes_requested",
+        "### Should Fix",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "english final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10616,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("将当前英文终稿完整转为中文版本");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+    const editorSection = between(
+      result.dispatch.message,
+      "Latest final-stage editor feedback block:\n",
+      "\nLatest final-stage reviewer block:\n"
+    );
+    const reviewerSection = between(result.dispatch.message, "Latest final-stage reviewer block:\n", "");
+    expect(editorSection).toContain("将当前英文终稿完整转为中文版本");
+    expect(editorSection).not.toContain("补一条正式稿意见");
+    expect(reviewerSection).toContain("补一条正式稿意见");
 
     await rm(projectDir, { recursive: true, force: true });
   });
