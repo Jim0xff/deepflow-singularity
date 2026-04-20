@@ -1,7 +1,14 @@
 import {
+  applyNonRecoverableDispatchFailure,
+  applyRecoverableDispatchFailure,
   chunkMessageText,
+  clearDispatchFailure,
+  dispatchFailureCounts,
+  dispatchRecoveryPlan,
+  hasNoReplySignal,
   parseAgentPayloadTexts,
   parseLatestVerdict,
+  recoverySessionId,
   runOpenClawAgent,
   sendOpenClawMessage,
   stripLegacyActionMenu,
@@ -190,5 +197,131 @@ describe("supervisor dispatch dedupe", () => {
     expect(parseLatestVerdict("## review\n未通过，需要修改")).toBe("changes_requested");
     expect(parseLatestVerdict("## review\n不能通过，继续修改")).toBe("changes_requested");
     expect(parseLatestVerdict("## review\n不可通过")).toBe("changes_requested");
+  });
+
+  test("detects no-reply dispatch output", () => {
+    expect(hasNoReplySignal({ stdout: "NO_REPLY", stderr: "" })).toBe(true);
+    expect(hasNoReplySignal({ stdout: "", stderr: "agent returned no_reply" })).toBe(true);
+    expect(hasNoReplySignal({ stdout: "normal payload", stderr: "" })).toBe(false);
+  });
+
+  test("normalizes dispatch failure counts", () => {
+    expect(
+      dispatchFailureCounts({
+        dispatch_failure_counts: {
+          "step7:100:writer": 2,
+          "step7:101:writer": "3",
+          stale: 0,
+          bad: "nan",
+        },
+      }),
+    ).toEqual({
+      "step7:100:writer": 2,
+      "step7:101:writer": 3,
+    });
+    expect(dispatchFailureCounts({ dispatch_failure_counts: [] })).toEqual({});
+  });
+
+  test("builds sanitized recovery session ids", () => {
+    const sessionId = recoverySessionId({
+      projectDir: `/tmp/projects/${"very-long-project-".repeat(20)}`,
+      actor: "writer",
+      dispatchKey: "step7:1776701039723.5732:writer:with/symbols",
+      attempt: 2,
+    });
+
+    expect(sessionId).toMatch(/^[a-z0-9_-]+$/);
+    expect(sessionId.length).toBeLessThanOrEqual(180);
+    expect(sessionId).toMatch(/-[a-f0-9]{12}-2$/);
+  });
+
+  test("recoverable no-reply failures rotate once and then park the dispatch key", () => {
+    const dispatchKey = "step7:100:writer";
+    const statusMtimeMs = 100;
+    const runtime = {};
+    const firstPlan = dispatchRecoveryPlan({
+      runtime,
+      projectDir: "/tmp/projects/demo",
+      actor: "writer",
+      dispatchKey,
+    });
+
+    expect(firstPlan.recoverySession).toBe("");
+
+    const firstPatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: firstPatch,
+      failureCounts: firstPlan.failureCounts,
+      dispatchKey,
+      previousFailureCount: firstPlan.previousFailureCount,
+      recoverySession: firstPlan.recoverySession,
+      statusMtimeMs,
+    });
+
+    expect(firstPatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 1 });
+    expect(firstPatch.last_recovery_action).toBe("will_rotate_session_on_next_retry");
+    expect(firstPatch.last_dispatch_key).toBeUndefined();
+
+    const retryPlan = dispatchRecoveryPlan({
+      runtime: firstPatch,
+      projectDir: "/tmp/projects/demo",
+      actor: "writer",
+      dispatchKey,
+    });
+
+    expect(retryPlan.recoverySession).toMatch(/^supervisor-recovery-demo-writer-[a-f0-9]{12}-1$/);
+
+    const secondPatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: secondPatch,
+      failureCounts: retryPlan.failureCounts,
+      dispatchKey,
+      previousFailureCount: retryPlan.previousFailureCount,
+      recoverySession: retryPlan.recoverySession,
+      statusMtimeMs,
+    });
+
+    expect(secondPatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 2 });
+    expect(secondPatch.last_recovery_action).toBe("recovery_retries_exhausted");
+    expect(secondPatch.last_dispatch_key).toBe(dispatchKey);
+    expect(secondPatch.last_dispatch_status_mtime_ms).toBe(statusMtimeMs);
+  });
+
+  test("successful recovery clears failure counters", () => {
+    const dispatchKey = "step7:100:writer";
+    const runtimePatch = {
+      last_error: "expected_file_not_changed",
+      last_dispatch_failed_at: "now",
+      last_no_reply_signal: "yes",
+    };
+    const failureCounts = { [dispatchKey]: 1, other: 2 };
+
+    clearDispatchFailure({
+      runtimePatch,
+      failureCounts,
+      dispatchKey,
+      recoverySession: "supervisor-recovery-demo-writer-hash-1",
+    });
+
+    expect(runtimePatch.dispatch_failure_counts).toEqual({ other: 2 });
+    expect(runtimePatch.last_error).toBeUndefined();
+    expect(runtimePatch.last_dispatch_failed_at).toBeUndefined();
+    expect(runtimePatch.last_no_reply_signal).toBeUndefined();
+    expect(runtimePatch.last_recovery_action).toBe("rotated_session_after_failed_dispatch");
+  });
+
+  test("non-recoverable file-change failures park without rotating session", () => {
+    const runtimePatch = {};
+    applyNonRecoverableDispatchFailure({
+      runtimePatch,
+      dispatchKey: "step7:100:writer",
+      statusMtimeMs: 100,
+      reason: "nonrecoverable_expected_file_not_changed",
+    });
+
+    expect(runtimePatch.last_recovery_session_id).toBe("");
+    expect(runtimePatch.last_recovery_action).toBe("nonrecoverable_expected_file_not_changed");
+    expect(runtimePatch.last_dispatch_key).toBe("step7:100:writer");
+    expect(runtimePatch.last_dispatch_status_mtime_ms).toBe(100);
   });
 });

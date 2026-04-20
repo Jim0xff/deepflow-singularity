@@ -1,6 +1,9 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+
+export const DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS = 1;
 
 export function ensureProjectDir(projectDir) {
   if (!projectDir || projectDir.startsWith("-")) {
@@ -131,6 +134,104 @@ export function runOpenClawAgent({
   delete childEnv.CLAWDBOT_GATEWAY_URL;
 
   return spawnSyncImpl(openclawNode, args, { encoding: "utf8", env: childEnv });
+}
+
+export function hasNoReplySignal(run) {
+  const text = `${String(run?.stdout || "")}\n${String(run?.stderr || "")}`;
+  return /\bNO_REPLY\b/i.test(text);
+}
+
+export function dispatchFailureCounts(runtime = {}) {
+  const value = runtime.dispatch_failure_counts;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const counts = {};
+  for (const [key, count] of Object.entries(value)) {
+    const numeric = Number(count);
+    if (Number.isFinite(numeric) && numeric > 0) counts[key] = numeric;
+  }
+  return counts;
+}
+
+export function recoverySessionId({ projectDir, actor, dispatchKey, attempt }) {
+  const projectId = path.basename(projectDir || "project");
+  const hash = createHash("sha256").update(String(dispatchKey || "")).digest("hex").slice(0, 12);
+  const attemptText = String(Math.max(1, Number(attempt) || 1));
+  const suffix = `-${hash}-${attemptText}`;
+  const prefixMaxLength = Math.max(1, 180 - suffix.length);
+  const prefix = `supervisor-recovery-${projectId}-${actor}`
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, prefixMaxLength)
+    .replace(/-+$/g, "");
+  return `${prefix || "supervisor-recovery"}${suffix}`;
+}
+
+export function dispatchRecoveryPlan({
+  runtime = {},
+  projectDir,
+  actor,
+  dispatchKey,
+  maxRecoverySessionAttempts = DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS,
+}) {
+  const failureCounts = dispatchFailureCounts(runtime);
+  const previousFailureCount = Number(failureCounts[dispatchKey] || 0);
+  const canUseRecoverySession =
+    previousFailureCount > 0 && previousFailureCount <= Number(maxRecoverySessionAttempts || 0);
+  return {
+    failureCounts,
+    previousFailureCount,
+    recoverySession: canUseRecoverySession
+      ? recoverySessionId({
+          projectDir,
+          actor,
+          dispatchKey,
+          attempt: previousFailureCount,
+        })
+      : "",
+  };
+}
+
+export function applyRecoverableDispatchFailure({
+  runtimePatch,
+  failureCounts,
+  dispatchKey,
+  previousFailureCount,
+  recoverySession,
+  statusMtimeMs,
+  maxRecoverySessionAttempts = DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS,
+}) {
+  const nextFailureCount = Number(previousFailureCount || 0) + 1;
+  failureCounts[dispatchKey] = nextFailureCount;
+  runtimePatch.dispatch_failure_counts = failureCounts;
+  runtimePatch.last_recovery_session_id = recoverySession;
+  if (nextFailureCount > Number(maxRecoverySessionAttempts || 0)) {
+    runtimePatch.last_recovery_action = "recovery_retries_exhausted";
+    runtimePatch.last_dispatch_key = dispatchKey;
+    runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
+    return { exhausted: true, nextFailureCount };
+  }
+  runtimePatch.last_recovery_action = recoverySession
+    ? "rotated_session_after_failed_dispatch"
+    : "will_rotate_session_on_next_retry";
+  return { exhausted: false, nextFailureCount };
+}
+
+export function applyNonRecoverableDispatchFailure({ runtimePatch, dispatchKey, statusMtimeMs, reason }) {
+  runtimePatch.last_recovery_session_id = "";
+  runtimePatch.last_recovery_action = reason || "nonrecoverable_dispatch_failure";
+  runtimePatch.last_dispatch_key = dispatchKey;
+  runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
+}
+
+export function clearDispatchFailure({ runtimePatch, failureCounts, dispatchKey, recoverySession }) {
+  delete failureCounts[dispatchKey];
+  runtimePatch.dispatch_failure_counts = failureCounts;
+  delete runtimePatch.last_error;
+  delete runtimePatch.last_dispatch_failed_at;
+  delete runtimePatch.last_no_reply_signal;
+  runtimePatch.last_recovery_session_id = recoverySession;
+  runtimePatch.last_recovery_action = recoverySession ? "rotated_session_after_failed_dispatch" : "";
 }
 
 export function parseAgentPayloadTexts(stdout) {

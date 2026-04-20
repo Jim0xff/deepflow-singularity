@@ -24,20 +24,6 @@ const STEP_5_MAIN_MESSAGE = [
   "Do not summarize or repeat sentinel/reviewer arguments.",
 ].join("\n");
 
-const STEP_7_REVIEWER_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_7_drafting",
-  "Read project.md, status.md, handoff.md, output.md, final-output.md, and draft_review_history.md.",
-  "Before review, first read all relevant shared review gates under /.openclaw/shared/knowledge/review_gates/ and all relevant shared repair patterns under /.openclaw/shared/knowledge/repair_patterns/.",
-  "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=reviewer, type=review_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
-  "If a template_id is bound, read /.openclaw/shared/templates/articles/<template_id>.md before review.",
-  "Do not read templates from the project directory.",
-  "If status.review_target=final or status.final_article_ready=yes, review final-output.md; otherwise review output.md.",
-  "Append the full review block to draft_review_history.md; include one exact line: verdict=approved or verdict=changes_requested.",
-  "Group reply must be the full review block itself, not a completion summary, file path, or status update.",
-].join("\n");
-
 const STEP_7_MAIN_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
@@ -148,6 +134,34 @@ function buildStep7WriterMessage(ctx) {
     "Do not append any menu, bot handoff options, or @bot instructions.",
     "",
     "Latest draft-stage editor feedback block:",
+    latestEditorFeedback,
+  ].join("\n");
+}
+
+function buildStep7ReviewerMessage(ctx) {
+  const finalReview =
+    String(ctx.status?.review_target || "").trim().toLowerCase() === "final" ||
+    String(ctx.status?.final_article_ready || "").trim().toLowerCase() === "yes";
+  const latestEditorFeedback = finalReview
+    ? latestFinalEditorFeedback(ctx.projectDir) || "(none)"
+    : latestDraftEditorFeedback(ctx.projectDir) || "(none)";
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_7_drafting",
+    "Read project.md, status.md, handoff.md, output.md, final-output.md, and draft_review_history.md.",
+    "Before review, first read all relevant shared review gates under /.openclaw/shared/knowledge/review_gates/ and all relevant shared repair patterns under /.openclaw/shared/knowledge/repair_patterns/.",
+    "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=reviewer, type=review_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
+    "If a template_id is bound, read /.openclaw/shared/templates/articles/<template_id>.md before review.",
+    "Do not read templates from the project directory.",
+    "If status.review_target=final or status.final_article_ready=yes, review final-output.md; otherwise review output.md.",
+    "If a latest editor feedback block is pasted below, treat it as mandatory review direction.",
+    "Verify the current review target against every item in that block; do not say no new editor feedback exists when this block is not (none).",
+    "If any item is unmet, verdict=changes_requested and MUST_FIX must restate the unmet items for the next writer pass.",
+    "Append the full review block to draft_review_history.md; include one exact line: verdict=approved or verdict=changes_requested.",
+    "Group reply must be the full review block itself, not a completion summary, file path, or status update.",
+    "",
+    "Latest editor feedback block for this review target:",
     latestEditorFeedback,
   ].join("\n");
 }
@@ -325,7 +339,7 @@ export async function tick(ctx) {
         dispatch: {
           key: `step7:${ctx.statusMtimeMs}:reviewer`,
           actor: "reviewer",
-          message: fill(STEP_7_REVIEWER_MESSAGE, ctx.projectDir),
+          message: buildStep7ReviewerMessage(ctx),
           deliverFromChangedFile: "draft_review_history.md",
           deliverRequiresChangedFile: true,
           afterSuccessWhenFilesChanged: ["draft_review_history.md"],

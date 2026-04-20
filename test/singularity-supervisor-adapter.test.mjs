@@ -126,6 +126,46 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches reviewer with latest draft-stage editor feedback block pasted from handoff", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-feedback-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## old-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "旧意见：轻微顺稿。",
+        "",
+        "## latest-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "先复审再修改：首两段必须明确《2001太空漫游》和《黑镜》的具体场景来源。",
+        "黑镜故事段必须补足人物-情节-冲突-映照完整链。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1022,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("Latest editor feedback block for this review target:");
+    expect(result.dispatch.message).toContain("首两段必须明确《2001太空漫游》和《黑镜》的具体场景来源");
+    expect(result.dispatch.message).toContain("人物-情节-冲突-映照完整链");
+    expect(result.dispatch.message).toContain("mandatory review direction");
+    expect(result.dispatch.message).toContain("verdict=changes_requested");
+    expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("returns step 7 to manual after draft approval menu", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

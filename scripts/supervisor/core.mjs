@@ -19,6 +19,11 @@ import {
   sendOpenClawMessage,
   stripLegacyActionMenu,
   chunkMessageText,
+  applyNonRecoverableDispatchFailure,
+  applyRecoverableDispatchFailure,
+  clearDispatchFailure,
+  dispatchRecoveryPlan,
+  hasNoReplySignal,
   updateStatusMdAtomic,
   writeJson,
 } from "./lib.mjs";
@@ -292,6 +297,12 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
           if (!agent?.agentId) {
             nextRuntime.last_error = `unknown_actor:${actor}`;
           } else {
+            const { failureCounts, previousFailureCount, recoverySession } = dispatchRecoveryPlan({
+              runtime,
+              projectDir,
+              actor,
+              dispatchKey,
+            });
             const delivery = {
               ...resolveTelegramDelivery(projectDir),
               account: agent.agentId,
@@ -303,25 +314,33 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             const run = runOpenClawAgent({
               agentId: agent.agentId,
               message: result.dispatch.message,
-              sessionId: result.dispatch.sessionId || agent.sessionId,
+              sessionId: result.dispatch.sessionId || recoverySession || agent.sessionId,
               openclawNode: OPENCLAW_NODE,
               openclawCli: OPENCLAW_CLI,
             });
             dispatched = run.status === 0;
+            const noReply = hasNoReplySignal(run);
+            let recoverableDispatchFailed = false;
+            let nonRecoverableDispatchFailureReason = "";
             if (dispatched) {
               const successFilesChanged = hasChangedRelativeFile(projectDir, successFileSnapshot);
               if (result.dispatch.deliverRequiresChangedFile && !successFilesChanged) {
                 dispatched = false;
+                recoverableDispatchFailed = noReply;
+                nonRecoverableDispatchFailureReason = noReply ? "" : "nonrecoverable_expected_file_not_changed";
                 nextRuntime.last_dispatch_failed_at = new Date().toISOString();
                 nextRuntime.last_error = "expected_file_not_changed";
+                nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
               } else {
                 const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
                   ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
                   : "";
                 if (result.dispatch.requireLatestVerdict && !parsedVerdict) {
                   dispatched = false;
+                  recoverableDispatchFailed = noReply;
                   nextRuntime.last_dispatch_failed_at = new Date().toISOString();
                   nextRuntime.last_error = "latest_verdict_missing";
+                  nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
                 } else {
                   const deliveryResult = result.dispatch.suppressDelivery
                     ? { ok: true, sent: 0, failed: 0 }
@@ -334,9 +353,12 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       });
                   if (!deliveryResult.ok) {
                     dispatched = false;
+                    recoverableDispatchFailed = noReply;
                     nextRuntime.last_dispatch_failed_at = new Date().toISOString();
                     nextRuntime.last_error = "delivery_failed";
+                    nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
                   } else {
+                    clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
                     nextRuntime.last_dispatch_key = dispatchKey;
                     nextRuntime.last_dispatch_actor = actor;
                     nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
@@ -369,7 +391,27 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 }
               }
             } else {
+              recoverableDispatchFailed = noReply;
               nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+              nextRuntime.last_error = noReply ? "no_reply" : nextRuntime.last_error;
+              nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+            }
+            if (recoverableDispatchFailed) {
+              applyRecoverableDispatchFailure({
+                runtimePatch: nextRuntime,
+                failureCounts,
+                dispatchKey,
+                previousFailureCount,
+                recoverySession,
+                statusMtimeMs,
+              });
+            } else if (nonRecoverableDispatchFailureReason) {
+              applyNonRecoverableDispatchFailure({
+                runtimePatch: nextRuntime,
+                dispatchKey,
+                statusMtimeMs,
+                reason: nonRecoverableDispatchFailureReason,
+              });
             }
             nextRuntime.last_dispatch_message = result.dispatch.message;
             nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
