@@ -24,22 +24,6 @@ const STEP_5_MAIN_MESSAGE = [
   "Do not summarize or repeat sentinel/reviewer arguments.",
 ].join("\n");
 
-const STEP_7_WRITER_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_7_drafting",
-  "Read project.md, status.md, handoff.md, interaction_log.md, materials.md, output.md, and draft_review_history.md.",
-  "Before drafting, first read all relevant shared writing rules under /.openclaw/shared/knowledge/writing_rules/.",
-  "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=writer, type=writing_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
-  "If a template_id is bound, read /.openclaw/shared/templates/articles/<template_id>.md before drafting.",
-  "Do not read templates from the project directory.",
-  "Draft or revise the article draft according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
-  "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
-  "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
-  "Group reply must be the latest full draft itself, not a summary or file path.",
-  "Do not append any menu, bot handoff options, or @bot instructions.",
-].join("\n");
-
 const STEP_7_REVIEWER_MESSAGE = [
   "Auto supervisor dispatch.",
   "Project root: {{projectDir}}",
@@ -134,6 +118,38 @@ function latestFinalReviewerReview(projectDir) {
   return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
     blockHasField(block, "review_target", "final") && blockHasField(block, "role", "reviewer")
   );
+}
+
+function latestDraftEditorFeedback(projectDir) {
+  return latestMatchingBlock(readProjectText(projectDir, "handoff.md"), (block) =>
+    blockHasField(block, "role", "editor") &&
+    blockHasField(block, "type", "step_7_feedback") &&
+    blockHasField(block, "target", "writer")
+  );
+}
+
+function buildStep7WriterMessage(ctx) {
+  const latestEditorFeedback = latestDraftEditorFeedback(ctx.projectDir) || "(none)";
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_7_drafting",
+    "Read project.md, status.md, handoff.md, interaction_log.md, materials.md, output.md, and draft_review_history.md.",
+    "Before drafting, first read all relevant shared writing rules under /.openclaw/shared/knowledge/writing_rules/.",
+    "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=writer, type=writing_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
+    "If a template_id is bound, read /.openclaw/shared/templates/articles/<template_id>.md before drafting.",
+    "Do not read templates from the project directory.",
+    "Draft or revise the article draft according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
+    "If a latest editor feedback block is pasted below, treat it as mandatory revision input and apply it before any broader rewriting.",
+    "In draft_review_history.md, explicitly state how the pasted latest editor feedback was applied.",
+    "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
+    "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
+    "Group reply must be the latest full draft itself, not a summary or file path.",
+    "Do not append any menu, bot handoff options, or @bot instructions.",
+    "",
+    "Latest draft-stage editor feedback block:",
+    latestEditorFeedback,
+  ].join("\n");
 }
 
 function finalWriterMode(status = {}) {
@@ -275,7 +291,7 @@ export async function tick(ctx) {
         dispatch: {
           key: `step7:${ctx.statusMtimeMs}:writer`,
           actor: "writer",
-          message: fill(STEP_7_WRITER_MESSAGE, ctx.projectDir),
+          message: buildStep7WriterMessage(ctx),
           stripLegacyActionMenu: true,
           deliverRequiresChangedFile: true,
           afterSuccessWhenFilesChanged: ["output.md"],

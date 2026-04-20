@@ -88,6 +88,44 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
+  test("dispatches writer with latest draft-stage editor feedback block pasted from handoff", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-writer-feedback-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## old-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "旧意见：轻微顺稿。",
+        "",
+        "## latest-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "继续修改一轮：名著映照段目前偏简略，请做有限增厚。",
+        "1) 把《是，大臣》与《官场现形记》的映照从观点并列升级到动作并列。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1021,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "writer",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("writer");
+    expect(result.dispatch.message).toContain("Latest draft-stage editor feedback block:");
+    expect(result.dispatch.message).toContain("继续修改一轮：名著映照段目前偏简略，请做有限增厚。");
+    expect(result.dispatch.message).toContain("动作并列");
+    expect(result.dispatch.message).toContain("treat it as mandatory revision input");
+    expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("returns step 7 to manual after draft approval menu", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

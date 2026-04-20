@@ -123,7 +123,7 @@ IF_NOT_RECORDED=BLOCK_NEXT_STEP
 ROLE_RULE=SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_output/final-output+writer->output.md+final_writer->final-output.md+reviewer->draft_review_history.md
 TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_MISSING->ASK_AND_BLOCK_STEP7(template:<id>|无模板|save_template:<id>)+template:<id>->BIND_project.md.template_id+handoff.md.template_id+ENTER_STEP7+无模板->CLEAR_project.md.template_id+handoff.md.template_id+ENTER_STEP7+save_template:<id>->CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+BIND_project.md.template_id+handoff.md.template_id+ENTER_STEP7
 WRITE_RULE=STEP7_DRAFT_FEEDBACK->handoff.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
-FINAL_EDITOR_BLOCK_RULE=role=editor+type=step_7_feedback+target=final_writer+instruction=USER_TEXT
+EDITOR_BLOCK_RULE=role=editor+type=step_7_feedback+target=writer|final_writer+instruction=USER_TEXT
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
 USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->WRITE_FEEDBACK_ONLY+SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft,final_writer_mode=)+step_7_final_menu_CHANGE_OR_2TEXT->WRITE_FINAL_EDITOR_BLOCK_TO_draft_review_history.md+SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise)+NO_MAIN_REWRITE+NO_MAIN_DONE_CLAIM_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASSED_CLAIM_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+START_NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS=step_7_drafting
