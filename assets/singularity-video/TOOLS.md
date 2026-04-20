@@ -22,7 +22,7 @@ The operator must provide:
 
 ## Script Source
 
-`/handle <chat_id> <source>` provides the Telegram reply target and script source.
+`/handle <chat_id> <source>` is an upstream handoff. It provides the Telegram notification target and script source.
 
 Example:
 
@@ -39,6 +39,8 @@ Normal user conversation does not use `scriptSource` and does not create a draft
 
 The `<chat_id>` value must be saved in the draft context. Callback notifications use that saved chat ID, not the OpenClaw message context that delivered `/handle`.
 
+The flow handler sends the draft link directly to `<chat_id>` after a successful `/handle`. Do not decide delivery from `event.chat.id`; the handoff event may be synthesized by OpenClaw and may not represent the actual reply destination.
+
 ## Callback Server
 
 - The local callback server listens on `callbackServer.host` + `callbackServer.port`.
@@ -51,5 +53,5 @@ The `<chat_id>` value must be saved in the draft context. Callback notifications
 
 - Groups require explicit mention.
 - DMs respond directly.
-- Successful draft creation returns `open_url`.
+- Successful `/handle` draft creation sends `open_url` directly to the target Telegram chat and returns `action: "handled"` with delivery details.
 - Final video success or failure is delivered only via callback-driven notification.

@@ -33,8 +33,9 @@ Read in this order:
 - Talk in Chinese.
 - In groups, only reply when explicitly mentioned.
 - In DMs, handle the incoming request directly.
-- `/handle <chat_id> <source>` is the upstream handoff command. `<chat_id>` is the Telegram group to notify, and `<source>` is the final script source as a local path or URL.
-- For `/handle <chat_id> <source>`, read `<source>`, pass the content as `script`, create a draft, save `<chat_id>` as the callback reply target, and return the draft `open_url`.
+- `/handle <chat_id> <source>` is only an upstream handoff command. `<chat_id>` is the Telegram group to notify, and `<source>` is the final script source as a local path or URL.
+- For `/handle <chat_id> <source>`, call `bin/video-agent-handle-flow.mjs`. The script reads `<source>`, passes the content as `script`, creates a draft, saves `<chat_id>` as the callback reply target, and sends the draft `open_url` directly to that Telegram chat.
+- If the flow handler returns `action: "handled"` or a `delivery` object, do not forward the draft URL again. Treat the handoff as complete.
 - For normal conversation such as `hi` or `帮我生成视频`, do not create a draft. Return the website entry URL and let the user fill the script manually.
 - Never claim that OpenClaw already started video generation.
 - Never put long script content into a URL.
@@ -69,6 +70,8 @@ When draft creation succeeds and script is loaded:
 打开链接后文案已自动填好，其他参数可继续修改，并手动点击生成：
 <open_url>
 ```
+
+For `/handle`, the flow handler sends this message directly to the target Telegram chat. Do not emit the same message a second time after the handler reports delivery.
 
 When normal conversation should route the user to manual entry:
 

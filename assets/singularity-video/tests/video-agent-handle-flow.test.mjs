@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { runVideoAgentHandleFlow } from '../bin/video-agent-handle-flow.mjs';
 import { handleVideoAgentFlow } from '../lib/video-agent-handle-flow.mjs';
 
 test('handleVideoAgentFlow ignores group message without mention', async () => {
@@ -198,6 +199,54 @@ test('handleVideoAgentFlow creates draft from /handle chat id handoff', async ()
   assert.equal(result.target?.account_id, 'video-agent');
   assert.equal(result.target?.chat_id, '-100654');
   assert.match(result.message, /https:\/\/example.com\/open\/chat-id/);
+});
+
+test('runVideoAgentHandleFlow sends /handle result to target chat even when event chat matches target', async () => {
+  const deliveries = [];
+  const result = await runVideoAgentHandleFlow({
+    event: {
+      chat: {
+        id: '-100654',
+        type: 'private',
+      },
+      message: {
+        id: 'synthetic-message',
+        text: '/handle tg:-100654 path:/tmp/final-script.txt',
+      },
+    },
+    handleFlow: async () => ({
+      action: 'reply',
+      target: {
+        account_id: 'video-agent',
+        chat_id: '-100654',
+        reply_to_message_id: 'synthetic-message',
+      },
+      message: '视频入口已创建。\nhttps://example.com/open/chat-id',
+    }),
+    sendTelegram: async (payload) => {
+      deliveries.push(payload);
+      return {
+        ok: true,
+        messageId: '901',
+        chatId: payload.chatId,
+      };
+    },
+  });
+
+  assert.equal(deliveries.length, 1);
+  assert.deepEqual(deliveries[0], {
+    accountId: 'video-agent',
+    chatId: '-100654',
+    message: '视频入口已创建。\nhttps://example.com/open/chat-id',
+    replyToMessageId: null,
+  });
+  assert.deepEqual(result.delivery, {
+    ok: true,
+    messageId: '901',
+    chatId: '-100654',
+  });
+  assert.equal(result.action, 'handled');
+  assert.equal(result.message, '视频入口已发送到目标群。');
 });
 
 test('handleVideoAgentFlow rejects malformed /handle command', async () => {
