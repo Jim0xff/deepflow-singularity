@@ -34,6 +34,7 @@ STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_next_actor_reviewer_fina
 PRESERVE = current_article_structure + thesis + boundaries + evidence
 IMPROVE = title + lead + transitions + rhythm + factual_citation_clarity + narrative_density
 MUST_KEEP = current_article_scenes + source_details + supervisor-approved_constraints
+OUTPUT_LANGUAGE = CHINESE_ONLY
 FINAL_OUTPUT_MUST_BE = COMPLETE_FORMAL_ARTICLE_NOT_NOTES
 MUST_REMOVE = draft_notes + handoff_language + bot_menu + internal_status_codes
 FORBIDDEN = NEW_UNAPPROVED_DIRECTION + UNSOURCED_FACTS + SUMMARY_ONLY + FILE_PATH_ONLY

@@ -169,13 +169,11 @@ function buildFinalWriterMessage(ctx) {
     revise
       ? "Use final-output.md as the only article base for this formal revision."
       : "Use output.md as the only article base for this first formal pass.",
-    revise
-      ? "Keep the same primary article language as final-output.md unless the pasted final-stage feedback explicitly requires a language switch."
-      : "Keep the same primary article language as output.md unless the pasted final-stage feedback explicitly requires a language switch.",
+    "Write the final article in Chinese.",
     "FULL_REWRITE_REQUIRED: treat the article base as source material, not as near-final copy to lightly edit.",
     "Rewrite the whole article into a publication-grade final article: rewrite title, lead, transitions, paragraph rhythm, and ending.",
     "Preserve the approved thesis, evidence chain, literary references, boundaries, and reviewer decisions unless the pasted final-stage feedback explicitly changes them.",
-    "Do not default to English or any other target language on your own.",
+    "Do not output English or any other non-Chinese full article.",
     "Removing process notes, translating only, or making partial line edits is not enough; final-output.md must be a freshly rewritten final article.",
     "Apply only the final-stage feedback blocks pasted below.",
     "Do not reuse draft-stage review history or older draft-stage feedback.",

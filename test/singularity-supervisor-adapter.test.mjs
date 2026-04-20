@@ -357,7 +357,7 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
-  test("final writer prompt requires inheriting base article language unless feedback switches it", async () => {
+  test("final writer prompt requires Chinese output", async () => {
     const result = await tick({
       projectDir: "/tmp/project",
       statusMtimeMs: 10617,
@@ -371,8 +371,8 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.actor).toBe("final_writer");
-    expect(result.dispatch.message).toContain("Keep the same primary article language as output.md");
-    expect(result.dispatch.message).toContain("Do not default to English");
+    expect(result.dispatch.message).toContain("Write the final article in Chinese.");
+    expect(result.dispatch.message).toContain("Do not output English or any other non-Chinese full article.");
   });
 
   test("waits for final editor feedback block before dispatching final writer revision", async () => {
