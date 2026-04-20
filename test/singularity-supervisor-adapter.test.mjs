@@ -319,6 +319,24 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("final writer prompt requires inheriting base article language unless feedback switches it", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 10617,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "generate",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("Keep the same primary article language as output.md");
+    expect(result.dispatch.message).toContain("Do not default to English");
+  });
+
   test("waits for final editor feedback block before dispatching final writer revision", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-missing-feedback-"));
     await writeFile(
