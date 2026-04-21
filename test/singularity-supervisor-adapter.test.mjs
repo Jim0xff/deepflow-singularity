@@ -29,6 +29,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("reviewer");
     expect(result.dispatch.key).toBe("step5:100:reviewer");
     expect(result.dispatch.message).toContain("Do not show a menu");
+    expect(result.dispatch.message).toContain("Use latest Sx point ids p1..pn");
+    expect(result.dispatch.message).toContain("covered_point_ids");
+    expect(result.dispatch.message).toContain("unanswered_point_ids");
     expect(result.dispatch.message).toContain("next_actor=main");
     expect(result.dispatch.afterSuccessPatch).toBeUndefined();
   });

@@ -7,6 +7,7 @@ const STEP_5_REVIEWER_MESSAGE = [
   "Current step: step_5_debate",
   "Read project.md, status.md, interaction_log.md, materials.md.",
   "Act as the reviewer for the current debate round.",
+  "Use latest Sx point ids p1..pn; if absent, assign p1..pn in order. If grouping, state covered_point_ids and unanswered_point_ids.",
   "Append the full reviewer output to interaction_log.md.",
   "Group reply must be the full counter-argument itself: Counter-Argument, Objections, Counter-Evidence, Limits, Open Questions.",
   "Do not reply with a completion summary, file path, or write-status report.",
