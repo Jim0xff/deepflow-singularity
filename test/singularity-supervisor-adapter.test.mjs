@@ -71,9 +71,13 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("writer");
     expect(result.dispatch.key).toBe("step7:102:writer");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/writing_rules/");
+    expect(result.dispatch.message).toContain(
+      "enumerate every file currently under /.openclaw/shared/knowledge/writing_rules/ and read them all"
+    );
     expect(result.dispatch.message).toContain("type=writing_knowledge_read");
     expect(result.dispatch.message).toContain("apply_points_or_none=...");
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
+    expect(result.dispatch.message).toContain("read only the bound shared template file");
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
     expect(result.dispatch.stripLegacyActionMenu).toBe(true);
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
@@ -207,6 +211,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("reviewer");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
+    expect(result.dispatch.message).toContain(
+      "enumerate every file currently under /.openclaw/shared/knowledge/review_gates/ and /.openclaw/shared/knowledge/repair_patterns/, then read them all"
+    );
     expect(result.dispatch.message).toContain("type=review_knowledge_read");
     expect(result.dispatch.message).toContain("read_fail_or_none=...");
     expect(result.dispatch.requireLatestVerdict).toBe(true);
@@ -556,6 +563,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("review final-output.md");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
+    expect(result.dispatch.message).toContain(
+      "enumerate every file currently under /.openclaw/shared/knowledge/review_gates/ and /.openclaw/shared/knowledge/repair_patterns/, then read them all"
+    );
     expect(result.dispatch.message).toContain("type=review_knowledge_read");
     expect(result.dispatch.message).toContain("apply_points_or_none=...");
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
