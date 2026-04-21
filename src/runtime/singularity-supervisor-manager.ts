@@ -213,27 +213,11 @@ function resolveCurrentStep(status: Record<string, string>): string {
   const workflowMode = String(status.workflow_mode || "").trim();
   const lastCompletedStep = String(status.last_completed_step || "").trim();
   const nextStep = String(status.next_step || "").trim();
-  const nextActor = String(status.next_actor || "").trim();
-  const reviewTarget = String(status.review_target || "").trim();
-  const finalWriterMode = String(status.final_writer_mode || "").trim();
-  const finalArticleReady = String(status.final_article_ready || "").trim().toLowerCase();
 
   if (workflowMode !== "auto") return "";
 
-  if (lastCompletedStep === "step_5_debate" || nextStep === "step_6_feedback") {
+  if (lastCompletedStep === "step_5_debate" && nextStep === "step_6_feedback") {
     return "step_5_debate";
-  }
-
-  if (
-    lastCompletedStep === "step_7_drafting"
-    || nextActor === "writer"
-    || nextActor === "final_writer"
-    || reviewTarget === "draft"
-    || reviewTarget === "final"
-    || finalWriterMode
-    || finalArticleReady === "yes"
-  ) {
-    return "step_7_drafting";
   }
 
   return "";

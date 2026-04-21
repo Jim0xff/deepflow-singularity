@@ -75,40 +75,6 @@ describe("singularity supervisor manager", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test("starts supervisor for auto step_7 project when current_step is missing but step status implies drafting", async () => {
-    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-manager-step7-fallback-"));
-    const callsPath = join(root, "calls.log");
-    const scriptPath = join(root, "fake-supervisor.mjs");
-    const step7Dir = join(root, "project-step7-fallback");
-
-    await mkdir(step7Dir, { recursive: true });
-    await writeFile(join(root, "CURRENT_PROJECT"), "project-step7-fallback\n", "utf8");
-    await writeFile(
-      join(step7Dir, "status.md"),
-      "workflow_mode: auto\nstatus: active\nnext_actor: writer\nawaiting_user_choice: no\nreview_target: draft\n",
-      "utf8",
-    );
-    await writeFile(
-      scriptPath,
-      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
-      "utf8",
-    );
-
-    const manager = createSingularitySupervisorManager({
-      projectsRoot: root,
-      intervalMs: 60_000,
-      scriptPath,
-    });
-
-    await manager.runNow();
-
-    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
-    expect(calls).toHaveLength(1);
-    expect(calls.some((line) => line.includes(`--project-dir ${step7Dir}`))).toBe(true);
-
-    await rm(root, { recursive: true, force: true });
-  });
-
   test("publishes approved article to docs-manager when requested", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-publish-"));
     const callsPath = join(root, "docs-calls.log");
