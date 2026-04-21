@@ -33,6 +33,23 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.afterSuccessPatch).toBeUndefined();
   });
 
+  test("dispatches reviewer for step 5 when current_step is missing but status implies debate", async () => {
+    const result = await tick({
+      projectDir: "/tmp/project",
+      statusMtimeMs: 1001,
+      status: {
+        workflow_mode: "auto",
+        last_completed_step: "step_5_debate",
+        next_step: "step_6_feedback",
+        next_actor: "reviewer",
+        awaiting_user_choice: "no",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.key).toBe("step5:1001:reviewer");
+  });
+
   test("dispatches main only when step 5 is waiting for user choice", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

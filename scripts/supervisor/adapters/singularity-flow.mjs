@@ -203,9 +203,26 @@ function buildFinalWriterMessage(ctx) {
   ].join("\n");
 }
 
+function resolveCurrentStep(status) {
+  const currentStep = String(status.current_step || "").trim();
+  if (currentStep) return currentStep;
+
+  const workflowMode = String(status.workflow_mode || "").trim();
+  const lastCompletedStep = String(status.last_completed_step || "").trim();
+  const nextStep = String(status.next_step || "").trim();
+
+  if (workflowMode !== "auto") return "";
+
+  if (lastCompletedStep === "step_5_debate" && nextStep === "step_6_feedback") {
+    return "step_5_debate";
+  }
+
+  return "";
+}
+
 export async function tick(ctx) {
   const workflowMode = String(ctx.status.workflow_mode || "").trim();
-  const currentStep = String(ctx.status.current_step || "").trim();
+  const currentStep = resolveCurrentStep(ctx.status);
   const nextActor = String(ctx.status.next_actor || "").trim();
   const awaitingUserChoice = String(ctx.status.awaiting_user_choice || "no").trim().toLowerCase();
 
