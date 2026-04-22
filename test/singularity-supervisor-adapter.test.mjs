@@ -424,6 +424,54 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches final writer revision when final editor feedback uses timestamp block format", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-timestamp-feedback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "---",
+        "[2026-04-22T13:34:00Z]",
+        "actor: editor",
+        "type: step_7_feedback",
+        "target: final_writer",
+        "mode: revise",
+        "instruction:",
+        "1) 两处表述补上明确时间并自然融入正文",
+        "2) 笔记体起手改成专栏叙述过渡",
+        "",
+        "---",
+        "[2026-04-22T13:30:00Z]",
+        "actor: reviewer",
+        "review_target: final",
+        "verdict=changes_requested",
+        "instruction:",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "existing final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10618,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("两处表述补上明确时间并自然融入正文");
+    expect(result.dispatch.message).toContain("笔记体起手改成专栏叙述过渡");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("final writer prompt requires Chinese output", async () => {
     const result = await tick({
       projectDir: "/tmp/project",

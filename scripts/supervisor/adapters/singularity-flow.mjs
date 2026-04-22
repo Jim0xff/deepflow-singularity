@@ -70,7 +70,7 @@ function markdownBlocks(text) {
   return String(text || "")
     .trim()
     .replace(/\r\n/g, "\n")
-    .split(/\n(?=(?:##\s|---\n###\s+Round:|###\s+Round:))/)
+    .split(/\n(?=(?:##\s|---\n(?:###\s+Round:|\[)|###\s+Round:))/)
     .map((block) => block.trim())
     .filter(Boolean);
 }
@@ -95,15 +95,22 @@ function blockHasField(block, key, value) {
     .some((line) => keyPattern.test(line) && valuePattern.test(line));
 }
 
+function blockHasAnyField(block, keys, value) {
+  return keys.some((key) => blockHasField(block, key, value));
+}
+
 function latestFinalEditorFeedback(projectDir) {
   return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    blockHasField(block, "target", "final_writer") && blockHasField(block, "role", "editor")
+    blockHasField(block, "target", "final_writer") &&
+    blockHasField(block, "type", "step_7_feedback") &&
+    blockHasAnyField(block, ["role", "actor"], "editor")
   );
 }
 
 function latestFinalReviewerReview(projectDir) {
   return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    blockHasField(block, "review_target", "final") && blockHasField(block, "role", "reviewer")
+    blockHasField(block, "review_target", "final") &&
+    blockHasAnyField(block, ["role", "actor"], "reviewer")
   );
 }
 
