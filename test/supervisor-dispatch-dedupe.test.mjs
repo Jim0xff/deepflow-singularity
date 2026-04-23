@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import {
   applyNonRecoverableDispatchFailure,
   applyRecoverableDispatchFailure,
@@ -22,9 +23,155 @@ import {
   snapshotRelativeFileSignatures,
   stripLegacyActionMenu,
 } from "../scripts/supervisor/lib.mjs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const SUPERVISOR_CORE_PATH = join(__dirname, "..", "scripts", "supervisor", "core.mjs");
+const SINGULARITY_ADAPTER_PATH = join(__dirname, "..", "scripts", "supervisor", "adapters", "singularity-flow.mjs");
+
+async function waitFor(predicate, { timeoutMs = 5_000, intervalMs = 50 } = {}) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await predicate();
+    if (result) return result;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("waitFor timeout");
+}
+
+async function stopChild(child) {
+  if (child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  const exited = await Promise.race([
+    new Promise((resolve) => child.once("exit", () => resolve(true))),
+    new Promise((resolve) => setTimeout(() => resolve(false), 500)),
+  ]);
+  if (!exited && child.exitCode === null) {
+    child.kill("SIGKILL");
+    await new Promise((resolve) => child.once("exit", resolve));
+  }
+}
+
+async function createFakeOpenClawCli(rootDir) {
+  const cliPath = join(rootDir, "fake-openclaw.mjs");
+  await writeFile(
+    cliPath,
+    `
+import { appendFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+function argValue(flag) {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? process.argv[index + 1] || "" : "";
+}
+
+function projectDirFromMessage(message) {
+  const match = String(message || "").match(/Project root:\\s*(.+)/);
+  return match ? match[1].trim() : "";
+}
+
+function log(entry) {
+  const logPath = process.env.FAKE_OPENCLAW_LOG;
+  if (!logPath) return;
+  appendFileSync(logPath, JSON.stringify(entry) + "\\n");
+}
+
+const command = process.argv[2] || "";
+
+if (command === "message" && process.argv[3] === "send") {
+  log({
+    kind: "message",
+    account: argValue("--account"),
+    target: argValue("--target"),
+    message: argValue("--message"),
+  });
+  process.stdout.write("{}");
+  process.exit(0);
+}
+
+if (command === "agent") {
+  const agentId = argValue("--agent");
+  const message = argValue("--message");
+  const projectDir = projectDirFromMessage(message);
+  log({ kind: "agent", agentId, projectDir });
+
+  if (agentId === "singularity-writer") {
+    writeFileSync(path.join(projectDir, "output.md"), "# Recovered Draft\\n\\nbody from fake writer", "utf8");
+  } else if (agentId === "singularity-reviewer") {
+    writeFileSync(
+      path.join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-23T10:25:00Z | role: reviewer | type: editorial_review | target: output.md | review_target: draft | verdict: approved",
+        "EDITORIAL_REVIEW",
+        "稿件可通过。",
+        "SHOULD_FIX",
+        "- 节奏可继续微调。",
+      ].join("\\n"),
+      "utf8",
+    );
+  } else if (agentId === "singularity-main") {
+    process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "main menu" }] } }));
+    process.exit(0);
+  }
+
+  process.stderr.write("read failed: Offset 350 is beyond end of file (235 lines total)");
+  process.exit(1);
+}
+
+process.stderr.write("unsupported fake openclaw command");
+process.exit(1);
+`.trimStart(),
+    "utf8",
+  );
+  return cliPath;
+}
+
+function parseJsonLines(text) {
+  return String(text || "")
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function createSupervisorRecoveryFixture({ nextActor }) {
+  const rootDir = await mkdtemp(join(tmpdir(), "supervisor-core-recovery-"));
+  const projectDir = join(rootDir, "demo-project");
+  const activeDir = join(rootDir, "active");
+  const logPath = join(rootDir, "fake-openclaw.log");
+  const cliPath = await createFakeOpenClawCli(rootDir);
+
+  await mkdir(projectDir, { recursive: true });
+  await mkdir(activeDir, { recursive: true });
+  await writeFile(join(activeDir, "telegram:-10001.current"), "demo-project\n", "utf8");
+  await writeFile(
+    join(projectDir, "status.md"),
+    [
+      "project_id: demo-project",
+      "status: active",
+      "workflow_mode: auto",
+      "current_step: step_7_drafting",
+      `next_actor: ${nextActor}`,
+      "awaiting_user_choice: no",
+      "final_article_ready: no",
+      "review_target: draft",
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  await writeFile(join(projectDir, "project.md"), "title: demo\n", "utf8");
+  await writeFile(join(projectDir, "handoff.md"), "## handoff\n", "utf8");
+  await writeFile(join(projectDir, "interaction_log.md"), "## interaction\n", "utf8");
+  await writeFile(join(projectDir, "materials.md"), "## materials\n", "utf8");
+  await writeFile(join(projectDir, "output.md"), "# Old Draft\n\nold body", "utf8");
+  await writeFile(join(projectDir, "draft_review_history.md"), "## old review\nverdict: changes_requested\n", "utf8");
+
+  return { rootDir, projectDir, logPath, cliPath };
+}
 
 describe("supervisor dispatch dedupe", () => {
   test("failed dispatch must not advance dedupe cursor", () => {
@@ -490,4 +637,100 @@ describe("supervisor dispatch dedupe", () => {
 
     await rm(projectDir, { recursive: true, force: true });
   });
+
+  test("core watch promotes writer changed-file recovery after transient failure", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+        return statusText.includes("next_actor: reviewer") ? statusText : "";
+      });
+
+      const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+      expect(runtime.last_dispatch_actor).toBe("writer");
+      expect(runtime.last_recovery_action).toBe("accepted_changed_files_after_transient_failure_and_delivered_from_file");
+      expect(runtime.last_failure_class).toBeUndefined();
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
+      expect(logEntries.some((entry) => entry.kind === "message" && /Recovered Draft/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch promotes reviewer changed-file recovery by verdict after transient failure", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "reviewer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+        return statusText.includes("next_actor: main") ? statusText : "";
+      });
+
+      const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+      expect(statusText).toContain("workflow_mode: auto");
+      expect(statusText).toContain("next_actor: main");
+
+      const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+      expect(runtime.last_dispatch_actor).toBe("reviewer");
+      expect(runtime.last_recovery_action).toBe("accepted_changed_files_after_transient_failure_and_delivered_from_file");
+      expect(runtime.last_failure_class).toBeUndefined();
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
+      expect(logEntries.some((entry) => entry.kind === "message" && /verdict: approved/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
 });
