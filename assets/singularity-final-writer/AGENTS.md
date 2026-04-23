@@ -25,9 +25,10 @@ TASK = WRITE_OR_REVISE_FORMAL_ARTICLE
 FIRST_FORMAL_PASS = USE_output.md_ONLY
 FORMAL_REVISION = USE_final-output.md_ONLY
 DO_NOT_OVERWRITE = output.md
-WRITE_TARGET = final-output.md + draft_review_history.md
-HISTORY_RULE = APPEND_ONLY + READ_TAIL_FIRST + RECORD_BASIS_AND_CHANGES + NO_FULL_REWRITE
-FEEDBACK_RULE = IF_after_final_writer_main_REQUIRE_PASTED_FINAL_EDITOR_BLOCK + IF_after_final_writer_reviewer_ALLOW_PASTED_FINAL_REVIEWER_BLOCK_ONLY + IGNORE_DRAFT_STAGE_HISTORY
+WRITE_TARGET = final-output.md + draft_review_history.md_APPEND_ONLY
+HISTORY_APPEND_FORMAT = ## timestamp|role:final_writer|mode:generate_OR_revise|base_doc:|output_doc:|feedback_source:|summary:|changes:
+HISTORY_IO = draft_review_history.md:READ_TAIL_FIRST+APPEND_ONLY+APPEND_LAST_BLOCK_ONLY+KEEP_FULL_PREFIX+NO_FULL_WRITE+NO_TRUNCATE+NO_DELETE+NO_REPLACE_PREFIX
+FEEDBACK_SCOPE = IF_after_final_writer_main_REQUIRE_PASTED_FINAL_EDITOR_BLOCK + IF_after_final_writer_reviewer_ALLOW_PASTED_FINAL_REVIEWER_BLOCK_ONLY + IGNORE_DRAFT_STAGE_HISTORY_FOR_REASONING_ONLY + KEEP_FILE_HISTORY_COMPLETE
 STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_next_actor_reviewer_final_article_ready_no_ELSE_SET_next_actor_main_final_article_ready_yes
 
 [WRITING_RULE]
@@ -37,7 +38,7 @@ MUST_KEEP = current_article_scenes + source_details + supervisor-approved_constr
 OUTPUT_LANGUAGE = CHINESE_ONLY
 FINAL_OUTPUT_MUST_BE = COMPLETE_FORMAL_ARTICLE_NOT_NOTES
 MUST_REMOVE = draft_notes + handoff_language + bot_menu + internal_status_codes
-FORBIDDEN = NEW_UNAPPROVED_DIRECTION + UNSOURCED_FACTS + SUMMARY_ONLY + FILE_PATH_ONLY
+FORBIDDEN = NEW_UNAPPROVED_DIRECTION + UNSOURCED_FACTS + SUMMARY_ONLY + FILE_PATH_ONLY + WRITE_FULL_draft_review_history.md + TRUNCATE_draft_review_history.md + DELETE_OLD_HISTORY + REPLACE_PREFIX_OF_draft_review_history.md
 
 [GROUP_OUTPUT]
 SUPERVISOR_DELIVERS_MAIN_MENU = TRUE

@@ -75,50 +75,146 @@ function markdownBlocks(text) {
     .filter(Boolean);
 }
 
-function latestMatchingBlock(text, matcher) {
-  const blocks = markdownBlocks(text);
+function latestMatchingHistoryBlock(text, matcher) {
+  const blocks = parseHistoryBlocks(text);
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     if (matcher(blocks[index])) return blocks[index];
   }
-  return "";
+  return null;
 }
 
-function escapeRegex(text) {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function normalizeFieldKey(key) {
+  return String(key || "")
+    .replace(/^[*-]\s*/, "")
+    .replace(/\*\*/g, "")
+    .trim()
+    .toLowerCase();
 }
 
-function blockHasField(block, key, value) {
-  const keyPattern = new RegExp(`\\b${escapeRegex(key)}\\b`, "i");
-  const valuePattern = new RegExp(`\\b${escapeRegex(value)}\\b`, "i");
-  return String(block)
-    .split(/\r?\n/)
-    .some((line) => keyPattern.test(line) && valuePattern.test(line));
+function parseHeaderPairs(line) {
+  return String(line || "")
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
+      return match ? [normalizeFieldKey(match[1]), match[2].trim()] : null;
+    })
+    .filter(Boolean);
 }
 
-function blockHasAnyField(block, keys, value) {
-  return keys.some((key) => blockHasField(block, key, value));
+function normalizeFieldValue(value) {
+  return String(value || "").trim().replace(/^`(.+)`$/s, "$1").trim();
+}
+
+function normalizeStructuredFieldValue(key, value) {
+  const normalized = normalizeFieldValue(value);
+  if (!normalized) return "";
+  if (["role", "actor", "type", "target", "mode", "review_target"].includes(key)) {
+    return normalized.split("+")[0].trim();
+  }
+  return normalized;
+}
+
+function fieldMatches(value, expected) {
+  const actual = String(value || "").trim().toLowerCase();
+  const wanted = String(expected || "").trim().toLowerCase();
+  if (!actual || !wanted) return false;
+  if (actual === wanted) return true;
+  return actual
+    .split(/\s*_or_\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .includes(wanted);
+}
+
+function parseHistoryBlock(raw) {
+  const lines = String(raw || "").replace(/\r\n/g, "\n").split("\n");
+  const block = { raw: String(raw || "").trim(), timestamp: "", role: "", type: "", target: "", mode: "", review_target: "", instruction: "" };
+  let inInstruction = false;
+  const instructionLines = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inInstruction) instructionLines.push("");
+      continue;
+    }
+    if (/^---$/.test(trimmed)) continue;
+    if (/^\[[^\]]+\]$/.test(trimmed)) {
+      block.timestamp = trimmed.slice(1, -1).trim();
+      continue;
+    }
+    if (/^##\s+/.test(trimmed)) {
+      const body = trimmed.replace(/^##\s+/, "");
+      const parts = body.split("|").map((part) => part.trim()).filter(Boolean);
+      if (parts.length) {
+        const first = parts.shift();
+        if (/^\d{4}-\d{2}-\d{2}T/.test(first) || !/:|=/.test(first)) block.timestamp = normalizeFieldValue(first);
+        for (const [key, value] of parts.flatMap(parseHeaderPairs)) {
+          const normalized = normalizeStructuredFieldValue(key, value);
+          if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
+          else if (key === "type") block.type = normalized;
+          else if (key === "target") block.target = normalized;
+          else if (key === "mode") block.mode = normalized;
+          else if (key === "review_target") block.review_target = normalized;
+        }
+      }
+      continue;
+    }
+    if (/^instruction\s*:/i.test(trimmed)) {
+      inInstruction = true;
+      const rest = trimmed.replace(/^instruction\s*:/i, "").trim();
+      if (rest) instructionLines.push(rest);
+      continue;
+    }
+    const pairs = !inInstruction ? parseHeaderPairs(trimmed) : [];
+    if (pairs.length) {
+      for (const [key, value] of pairs) {
+        const normalized = normalizeStructuredFieldValue(key, value);
+        if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
+        else if (key === "type") block.type = normalized;
+        else if (key === "target") block.target = normalized;
+        else if (key === "mode") block.mode = normalized;
+        else if (key === "review_target") block.review_target = normalized;
+      }
+      continue;
+    }
+    if (inInstruction) instructionLines.push(line);
+  }
+  block.instruction = instructionLines.join("\n").trim();
+  return block;
+}
+
+function parseHistoryBlocks(text) {
+  return markdownBlocks(text).map(parseHistoryBlock);
 }
 
 function latestFinalEditorFeedback(projectDir) {
-  return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    blockHasField(block, "target", "final_writer") &&
-    blockHasField(block, "type", "step_7_feedback") &&
-    blockHasAnyField(block, ["role", "actor"], "editor")
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+      fieldMatches(block.target, "final_writer") &&
+      fieldMatches(block.type, "step_7_feedback") &&
+      fieldMatches(block.role, "editor")
+    )?.raw || ""
   );
 }
 
 function latestFinalReviewerReview(projectDir) {
-  return latestMatchingBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
-    blockHasField(block, "review_target", "final") &&
-    blockHasAnyField(block, ["role", "actor"], "reviewer")
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+      fieldMatches(block.review_target, "final") &&
+      fieldMatches(block.role, "reviewer")
+    )?.raw || ""
   );
 }
 
 function latestDraftEditorFeedback(projectDir) {
-  return latestMatchingBlock(readProjectText(projectDir, "handoff.md"), (block) =>
-    blockHasField(block, "role", "editor") &&
-    blockHasField(block, "type", "step_7_feedback") &&
-    blockHasField(block, "target", "writer")
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
+      fieldMatches(block.role, "editor") &&
+      fieldMatches(block.type, "step_7_feedback") &&
+      fieldMatches(block.target, "writer")
+    )?.raw || ""
   );
 }
 

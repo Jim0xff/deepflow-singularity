@@ -472,6 +472,114 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches final writer revision when final editor feedback uses canonical header format", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-writer-canonical-feedback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: final_writer | mode: revise",
+        "instruction:",
+        "1) 两处表述补上明确时间并自然融入正文",
+        "2) 笔记体起手改成专栏叙述过渡",
+        "",
+        "## 2026-04-22T13:30:00Z | role: reviewer | review_target: final",
+        "verdict=changes_requested",
+        "instruction:",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "existing final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10618,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("两处表述补上明确时间并自然融入正文");
+    expect(result.dispatch.message).toContain("笔记体起手改成专栏叙述过渡");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches writer when draft editor feedback target carries canonical suffix text", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-draft-writer-suffixed-target-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: writer+instruction:",
+        "instruction:",
+        "按这条意见改稿",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "output.md"), "existing draft", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10619,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "writer",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("writer");
+    expect(result.dispatch.message).toContain("按这条意见改稿");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches final writer when reviewer review_target uses OR enum text", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-review-or-enum-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: final_writer | mode: revise",
+        "instruction:",
+        "修正式稿",
+        "",
+        "## 2026-04-22T13:30:00Z | role: reviewer | type: editorial_review | target: output.md_OR_final-output.md | review_target: draft_OR_final | verdict: approved_OR_changes_requested",
+        "verdict=changes_requested",
+        "instruction:",
+        "补一条正式稿意见",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "final-output.md"), "existing final", "utf8");
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 10620,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "final_writer",
+        after_final_writer: "main",
+        final_writer_mode: "revise",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("final_writer");
+    expect(result.dispatch.message).toContain("修正式稿");
+    expect(result.dispatch.message).toContain("补一条正式稿意见");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("final writer prompt requires Chinese output", async () => {
     const result = await tick({
       projectDir: "/tmp/project",
