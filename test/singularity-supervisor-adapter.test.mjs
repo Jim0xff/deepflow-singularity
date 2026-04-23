@@ -99,6 +99,10 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
     expect(result.dispatch.message).toContain("read only the bound shared template file");
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
+    expect(result.dispatch.suppressDelivery).toBe(true);
+    expect(result.dispatch.deliverFromChangedFile).toBeUndefined();
+    expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("output.md");
+    expect(result.dispatch.recoveryDeliveryActor).toBe("main");
     expect(result.dispatch.stripLegacyActionMenu).toBe(true);
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["output.md"]);
@@ -258,6 +262,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("Rewrite the whole article into a publication-grade final article");
     expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:");
     expect(result.dispatch.suppressDelivery).toBe(true);
+    expect(result.dispatch.deliverFromChangedFile).toBeUndefined();
+    expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("final-output.md");
+    expect(result.dispatch.recoveryDeliveryActor).toBe("main");
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
@@ -761,7 +768,10 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.deliveryActor).toBe("main");
     expect(result.dispatch.deliverFromChangedFile).toBe("draft_review_history.md");
+    expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("draft_review_history.md");
+    expect(result.dispatch.recoveryDeliveryActor).toBe("main");
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["draft_review_history.md"]);
     expect(result.dispatch.afterSuccessPatchFromLatestVerdict).toBe(true);

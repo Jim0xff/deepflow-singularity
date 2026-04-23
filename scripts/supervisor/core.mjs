@@ -7,6 +7,10 @@ import {
   daemonizeWatch,
   ensureProjectDir,
   fileMtimeMs,
+  canPromoteChangedFileDispatch,
+  hasChangedRelativeFile,
+  hasTransientDeliveryFailureSignal,
+  shouldDispatchRepeated,
   latestMarkdownBlock,
   parseStatusMd,
   parseAgentPayloadTexts,
@@ -17,6 +21,8 @@ import {
   resolveExistingPath,
   runOpenClawAgent,
   sendOpenClawMessage,
+  snapshotDispatchResumeSignals,
+  snapshotRelativeFileSignatures,
   stripLegacyActionMenu,
   chunkMessageText,
   applyNonRecoverableDispatchFailure,
@@ -24,6 +30,7 @@ import {
   clearDispatchFailure,
   dispatchRecoveryPlan,
   hasNoReplySignal,
+  hasTransientDispatchFailureSignal,
   updateStatusMdAtomic,
   writeJson,
 } from "./lib.mjs";
@@ -188,20 +195,6 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
   return { ok: failed.length === 0, sent: sent.length, failed: failed.length };
 }
 
-function snapshotRelativeFileMtimes(projectDir, relativePaths = []) {
-  const snapshot = {};
-  for (const relativePath of relativePaths) {
-    snapshot[relativePath] = fileMtimeMs(path.join(projectDir, relativePath));
-  }
-  return snapshot;
-}
-
-function hasChangedRelativeFile(projectDir, before = {}) {
-  return Object.entries(before).some(([relativePath, previousMtime]) => {
-    return fileMtimeMs(path.join(projectDir, relativePath)) > Number(previousMtime || 0);
-  });
-}
-
 function verdictPatch(verdict, status = {}) {
   const reviewTarget = String(status.review_target || "").trim().toLowerCase();
   const finalArticleReady = String(status.final_article_ready || "").trim().toLowerCase() === "yes";
@@ -290,12 +283,30 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
           dispatchKey &&
           dispatchKey === String(runtime.last_dispatch_key || "") &&
           Number(runtime.last_dispatch_status_mtime_ms || 0) === statusMtimeMs;
+        const repeatedDecision = repeated ? shouldDispatchRepeated({ runtime, projectDir }) : { shouldDispatch: true };
 
-        if (!repeated) {
+        if (!repeated || repeatedDecision.shouldDispatch) {
           const actor = result.dispatch.actor;
           const agent = agentRuntime[actor];
+          const dispatchStartedAt = new Date();
+          const dispatchStartedAtIso = dispatchStartedAt.toISOString();
+          const { paths: resumeSignalPaths, snapshot: resumeSignals } = snapshotDispatchResumeSignals(
+            projectDir,
+            result.dispatch,
+          );
+          let run = { status: 1, stdout: "", stderr: "" };
           if (!agent?.agentId) {
+            nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
             nextRuntime.last_error = `unknown_actor:${actor}`;
+            applyNonRecoverableDispatchFailure({
+              runtimePatch: nextRuntime,
+              dispatchKey,
+              statusMtimeMs,
+              reason: `unknown_actor:${actor}`,
+              nowIso: dispatchStartedAtIso,
+              resumeSignals,
+              resumeSignalPaths,
+            });
           } else {
             const { failureCounts, previousFailureCount, recoverySession } = dispatchRecoveryPlan({
               runtime,
@@ -303,15 +314,17 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               actor,
               dispatchKey,
             });
+            const deliveryActorKey = result.dispatch.deliveryActor || actor;
+            const deliveryAgent = agentRuntime[deliveryActorKey] || agent;
             const delivery = {
               ...resolveTelegramDelivery(projectDir),
-              account: agent.agentId,
+              account: deliveryAgent?.agentId || agent.agentId,
             };
-            const successFileSnapshot = snapshotRelativeFileMtimes(
+            const successFileSnapshot = snapshotRelativeFileSignatures(
               projectDir,
               result.dispatch.afterSuccessWhenFilesChanged,
             );
-            const run = runOpenClawAgent({
+            run = runOpenClawAgent({
               agentId: agent.agentId,
               message: result.dispatch.message,
               sessionId: result.dispatch.sessionId || recoverySession || agent.sessionId,
@@ -320,27 +333,31 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             });
             dispatched = run.status === 0;
             const noReply = hasNoReplySignal(run);
+            const transientDispatchFailure = hasTransientDispatchFailureSignal(run);
+            const successFilesChanged = hasChangedRelativeFile(projectDir, successFileSnapshot);
+            const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
+              ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
+              : "";
             let recoverableDispatchFailed = false;
-            let nonRecoverableDispatchFailureReason = "";
+            let blockedDispatchFailureReason = "";
             if (dispatched) {
-              const successFilesChanged = hasChangedRelativeFile(projectDir, successFileSnapshot);
               if (result.dispatch.deliverRequiresChangedFile && !successFilesChanged) {
                 dispatched = false;
-                recoverableDispatchFailed = noReply;
-                nonRecoverableDispatchFailureReason = noReply ? "" : "nonrecoverable_expected_file_not_changed";
-                nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                recoverableDispatchFailed = transientDispatchFailure;
+                blockedDispatchFailureReason = transientDispatchFailure ? "" : "expected_file_not_changed";
+                nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
                 nextRuntime.last_error = "expected_file_not_changed";
                 nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+                nextRuntime.last_transient_failure_signal = transientDispatchFailure ? "yes" : "no";
               } else {
-                const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
-                  ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
-                  : "";
                 if (result.dispatch.requireLatestVerdict && !parsedVerdict) {
                   dispatched = false;
-                  recoverableDispatchFailed = noReply;
-                  nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                  recoverableDispatchFailed = transientDispatchFailure;
+                  blockedDispatchFailureReason = transientDispatchFailure ? "" : "latest_verdict_missing";
+                  nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
                   nextRuntime.last_error = "latest_verdict_missing";
                   nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+                  nextRuntime.last_transient_failure_signal = transientDispatchFailure ? "yes" : "no";
                 } else {
                   const deliveryResult = result.dispatch.suppressDelivery
                     ? { ok: true, sent: 0, failed: 0 }
@@ -352,21 +369,25 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                         nextRuntime,
                       });
                   if (!deliveryResult.ok) {
+                    const transientDeliveryFailure = hasTransientDeliveryFailureSignal(nextRuntime.last_delivery_error);
                     dispatched = false;
-                    recoverableDispatchFailed = noReply;
-                    nextRuntime.last_dispatch_failed_at = new Date().toISOString();
+                    recoverableDispatchFailed = transientDispatchFailure || transientDeliveryFailure;
+                    blockedDispatchFailureReason = recoverableDispatchFailed ? "" : "delivery_failed";
+                    nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
                     nextRuntime.last_error = "delivery_failed";
                     nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+                    nextRuntime.last_transient_failure_signal =
+                      transientDispatchFailure || transientDeliveryFailure ? "yes" : "no";
                   } else {
                     clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
                     nextRuntime.last_dispatch_key = dispatchKey;
                     nextRuntime.last_dispatch_actor = actor;
                     nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
-                    nextRuntime.last_dispatch_at = new Date().toISOString();
+                    nextRuntime.last_dispatch_at = dispatchStartedAtIso;
                     if (result.dispatch.afterSuccessPatch && successFilesChanged) {
                       updateStatusMdAtomic(statusPath, {
                         ...result.dispatch.afterSuccessPatch,
-                        updated_at: new Date().toISOString(),
+                        updated_at: dispatchStartedAtIso,
                       });
                       dispatched = false;
                     }
@@ -375,7 +396,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       if (patch) {
                         updateStatusMdAtomic(statusPath, {
                           ...patch,
-                          updated_at: new Date().toISOString(),
+                          updated_at: dispatchStartedAtIso,
                         });
                         dispatched = false;
                       }
@@ -383,7 +404,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                     if (result.dispatch.afterStatusPatch) {
                       updateStatusMdAtomic(statusPath, {
                         ...result.dispatch.afterStatusPatch,
-                        updated_at: new Date().toISOString(),
+                        updated_at: dispatchStartedAtIso,
                       });
                       dispatched = false;
                     }
@@ -391,10 +412,85 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 }
               }
             } else {
-              recoverableDispatchFailed = noReply;
-              nextRuntime.last_dispatch_failed_at = new Date().toISOString();
-              nextRuntime.last_error = noReply ? "no_reply" : nextRuntime.last_error;
-              nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+              const promoteChangedFiles = canPromoteChangedFileDispatch({
+                dispatch: result.dispatch,
+                successFilesChanged,
+                transientDispatchFailure,
+                parsedVerdict,
+              });
+              if (promoteChangedFiles) {
+                const recoveryDeliveryPath = String(result.dispatch.recoveryDeliverFromChangedFile || "").trim();
+                const recoveryDeliveryActorKey = result.dispatch.recoveryDeliveryActor || result.dispatch.deliveryActor || actor;
+                const recoveryDeliveryAgent = agentRuntime[recoveryDeliveryActorKey] || deliveryAgent || agent;
+                const recoveryDelivery = {
+                  ...delivery,
+                  account: recoveryDeliveryAgent?.agentId || delivery.account,
+                };
+                const recoveryDeliveryResult = recoveryDeliveryPath
+                  ? deliverAgentPayloads({
+                      delivery: recoveryDelivery,
+                      actor,
+                      run: { stdout: "" },
+                      dispatch: {
+                        ...result.dispatch,
+                        projectDir,
+                        deliverFromChangedFile: recoveryDeliveryPath,
+                      },
+                      nextRuntime,
+                    })
+                  : { ok: true, sent: 0, failed: 0 };
+                clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
+                nextRuntime.last_recovery_action = recoveryDeliveryPath
+                  ? recoveryDeliveryResult.ok
+                    ? recoveryDeliveryResult.sent > 0
+                      ? "accepted_changed_files_after_transient_failure_and_delivered_from_file"
+                      : "accepted_changed_files_after_transient_failure"
+                    : "accepted_changed_files_after_transient_failure_but_recovery_delivery_failed"
+                  : "accepted_changed_files_after_transient_failure";
+                nextRuntime.last_dispatch_key = dispatchKey;
+                nextRuntime.last_dispatch_actor = actor;
+                nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
+                nextRuntime.last_dispatch_at = dispatchStartedAtIso;
+                if (result.dispatch.afterSuccessPatch) {
+                  updateStatusMdAtomic(statusPath, {
+                    ...result.dispatch.afterSuccessPatch,
+                    updated_at: dispatchStartedAtIso,
+                  });
+                  dispatched = false;
+                }
+                if (result.dispatch.afterSuccessPatchFromLatestVerdict && parsedVerdict) {
+                  const patch = verdictPatch(parsedVerdict, status);
+                  if (patch) {
+                    updateStatusMdAtomic(statusPath, {
+                      ...patch,
+                      updated_at: dispatchStartedAtIso,
+                    });
+                    dispatched = false;
+                  }
+                }
+                if (result.dispatch.afterStatusPatch) {
+                  updateStatusMdAtomic(statusPath, {
+                    ...result.dispatch.afterStatusPatch,
+                    updated_at: dispatchStartedAtIso,
+                  });
+                  dispatched = false;
+                }
+              } else {
+                recoverableDispatchFailed = transientDispatchFailure;
+                blockedDispatchFailureReason = transientDispatchFailure
+                  ? ""
+                  : String(run.stderr || "").trim() === "openclaw_path_missing"
+                    ? "openclaw_path_missing"
+                    : "dispatch_failed";
+                nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
+                nextRuntime.last_error = noReply
+                  ? "no_reply"
+                  : transientDispatchFailure
+                    ? "transient_dispatch_failure"
+                    : blockedDispatchFailureReason;
+                nextRuntime.last_no_reply_signal = noReply ? "yes" : "no";
+                nextRuntime.last_transient_failure_signal = transientDispatchFailure ? "yes" : "no";
+              }
             }
             if (recoverableDispatchFailed) {
               applyRecoverableDispatchFailure({
@@ -404,13 +500,20 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 previousFailureCount,
                 recoverySession,
                 statusMtimeMs,
+                nowIso: dispatchStartedAtIso,
+                reason: String(nextRuntime.last_error || "retryable_dispatch_failure"),
+                resumeSignals,
+                resumeSignalPaths,
               });
-            } else if (nonRecoverableDispatchFailureReason) {
+            } else if (blockedDispatchFailureReason) {
               applyNonRecoverableDispatchFailure({
                 runtimePatch: nextRuntime,
                 dispatchKey,
                 statusMtimeMs,
-                reason: nonRecoverableDispatchFailureReason,
+                reason: blockedDispatchFailureReason,
+                nowIso: dispatchStartedAtIso,
+                resumeSignals,
+                resumeSignalPaths,
               });
             }
             nextRuntime.last_dispatch_message = result.dispatch.message;

@@ -4,6 +4,8 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 export const DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS = 1;
+export const DEFAULT_RETRY_DELAYS_MS = [15_000, 60_000];
+export const DEFAULT_PROBE_RETRY_DELAY_MS = 15 * 60_000;
 
 export function ensureProjectDir(projectDir) {
   if (!projectDir || projectDir.startsWith("-")) {
@@ -80,6 +82,51 @@ export function fileMtimeMs(filePath) {
   }
 }
 
+export function relativeFileSignature(projectDir, relativePath) {
+  const filePath = path.join(projectDir, relativePath);
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return "";
+    const content = fs.readFileSync(filePath);
+    return `${stat.mtimeMs}:${stat.size}:${createHash("sha1").update(content).digest("hex")}`;
+  } catch {
+    return "";
+  }
+}
+
+export function snapshotRelativeFileSignatures(projectDir, relativePaths = []) {
+  const snapshot = {};
+  for (const relativePath of relativePaths) {
+    snapshot[relativePath] = relativeFileSignature(projectDir, relativePath);
+  }
+  return snapshot;
+}
+
+export function hasChangedRelativeFile(projectDir, before = {}) {
+  return Object.entries(before).some(([relativePath, previousSignature]) => {
+    return relativeFileSignature(projectDir, relativePath) !== String(previousSignature || "");
+  });
+}
+
+export function dispatchResumeSignalPaths(dispatch = {}) {
+  const paths = new Set();
+  for (const relativePath of dispatch.afterSuccessWhenFilesChanged || []) {
+    const value = String(relativePath || "").trim();
+    if (value) paths.add(value);
+  }
+  const deliverPath = String(dispatch.deliverFromChangedFile || "").trim();
+  if (deliverPath) paths.add(deliverPath);
+  return [...paths];
+}
+
+export function snapshotDispatchResumeSignals(projectDir, dispatch = {}) {
+  const paths = dispatchResumeSignalPaths(dispatch);
+  return {
+    paths,
+    snapshot: snapshotRelativeFileSignatures(projectDir, paths),
+  };
+}
+
 export function pidAlive(pid, match = "") {
   const numericPid = Number(pid);
   if (!numericPid) return false;
@@ -141,6 +188,74 @@ export function hasNoReplySignal(run) {
   return /\bNO_REPLY\b/i.test(text);
 }
 
+export function hasTransientFailureText(text) {
+  return (
+    /\bNO_REPLY\b/i.test(text) ||
+    /\bread failed:\s*Offset \d+ is beyond end of file\b/i.test(text) ||
+    /\bembedded run agent end\b[\s\S]*\bisError=true\b[\s\S]*\berror=terminated\b/i.test(text) ||
+    /\b(ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND)\b/i.test(text) ||
+    /\btimeout\b|\btimed out\b/i.test(text) ||
+    /\b(429|502|503|504)\b/i.test(text) ||
+    /\btemporar(?:y|ily)\b[\s_-]*unavailable\b/i.test(text)
+  );
+}
+
+export function hasTransientDispatchFailureSignal(run) {
+  const text = `${String(run?.stdout || "")}\n${String(run?.stderr || "")}`;
+  return hasTransientFailureText(text);
+}
+
+export function hasTransientDeliveryFailureSignal(deliveryErrorText) {
+  return hasTransientFailureText(String(deliveryErrorText || ""));
+}
+
+export function canPromoteChangedFileDispatch({
+  dispatch = {},
+  successFilesChanged = false,
+  transientDispatchFailure = false,
+  parsedVerdict = "",
+}) {
+  const hasAdvancePatch = Boolean(dispatch.afterSuccessPatch || dispatch.afterStatusPatch);
+  const hasVerdictDrivenAdvance = Boolean(dispatch.afterSuccessPatchFromLatestVerdict && parsedVerdict);
+  return Boolean(
+    dispatch.deliverRequiresChangedFile &&
+      (hasAdvancePatch || hasVerdictDrivenAdvance) &&
+      successFilesChanged &&
+      transientDispatchFailure,
+  );
+}
+
+export function hasDispatchResumeSignalChanged(projectDir, runtime = {}) {
+  const snapshot =
+    runtime.last_dispatch_resume_signals &&
+    typeof runtime.last_dispatch_resume_signals === "object" &&
+    !Array.isArray(runtime.last_dispatch_resume_signals)
+      ? runtime.last_dispatch_resume_signals
+      : {};
+  return hasChangedRelativeFile(projectDir, snapshot);
+}
+
+export function shouldDispatchRepeated({ runtime = {}, projectDir, nowMs = Date.now() }) {
+  if (hasDispatchResumeSignalChanged(projectDir, runtime)) {
+    return { shouldDispatch: true, reason: "resume_signal_changed" };
+  }
+
+  const hasFailureState = Boolean(runtime.last_failure_class || runtime.next_retry_at);
+  if (!hasFailureState) {
+    return { shouldDispatch: false, reason: "already_dispatched_for_status" };
+  }
+
+  const nextRetryAtMs = Date.parse(String(runtime.next_retry_at || ""));
+  if (Number.isFinite(nextRetryAtMs) && nextRetryAtMs > nowMs) {
+    return { shouldDispatch: false, reason: "waiting_for_retry_window" };
+  }
+
+  return {
+    shouldDispatch: true,
+    reason: String(runtime.retry_mode || "").trim().toLowerCase() === "probe" ? "probe_due" : "retry_due",
+  };
+}
+
 export function dispatchFailureCounts(runtime = {}) {
   const value = runtime.dispatch_failure_counts;
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -200,28 +315,67 @@ export function applyRecoverableDispatchFailure({
   recoverySession,
   statusMtimeMs,
   maxRecoverySessionAttempts = DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS,
+  retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
+  probeRetryDelayMs = DEFAULT_PROBE_RETRY_DELAY_MS,
+  nowIso = new Date().toISOString(),
+  reason = "",
+  resumeSignals = {},
+  resumeSignalPaths = [],
 }) {
   const nextFailureCount = Number(previousFailureCount || 0) + 1;
   failureCounts[dispatchKey] = nextFailureCount;
   runtimePatch.dispatch_failure_counts = failureCounts;
   runtimePatch.last_recovery_session_id = recoverySession;
-  if (nextFailureCount > Number(maxRecoverySessionAttempts || 0)) {
-    runtimePatch.last_recovery_action = "recovery_retries_exhausted";
-    runtimePatch.last_dispatch_key = dispatchKey;
-    runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
-    return { exhausted: true, nextFailureCount };
-  }
-  runtimePatch.last_recovery_action = recoverySession
-    ? "rotated_session_after_failed_dispatch"
-    : "will_rotate_session_on_next_retry";
-  return { exhausted: false, nextFailureCount };
-}
-
-export function applyNonRecoverableDispatchFailure({ runtimePatch, dispatchKey, statusMtimeMs, reason }) {
-  runtimePatch.last_recovery_session_id = "";
-  runtimePatch.last_recovery_action = reason || "nonrecoverable_dispatch_failure";
   runtimePatch.last_dispatch_key = dispatchKey;
   runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
+  runtimePatch.last_failure_class = "retryable";
+  runtimePatch.last_failure_reason = reason || String(runtimePatch.last_error || "retryable_dispatch_failure");
+  runtimePatch.retry_attempt = nextFailureCount;
+  runtimePatch.last_dispatch_resume_signals = resumeSignals;
+  runtimePatch.last_resume_signal_paths = resumeSignalPaths;
+  runtimePatch.blocked_since = "";
+  runtimePatch.probe_every_ms = Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
+
+  const delayMs = Number(retryDelaysMs[nextFailureCount - 1]);
+  if (Number.isFinite(delayMs) && delayMs > 0) {
+    runtimePatch.retry_mode = "retry";
+    runtimePatch.retry_backoff_ms = delayMs;
+    runtimePatch.next_retry_at = new Date(Date.parse(nowIso) + delayMs).toISOString();
+    runtimePatch.last_recovery_action = recoverySession ? "retry_scheduled_after_rotated_session" : "retry_scheduled";
+    return { exhausted: false, nextFailureCount, mode: "retry", delayMs };
+  }
+
+  runtimePatch.retry_mode = "probe";
+  runtimePatch.retry_backoff_ms = runtimePatch.probe_every_ms;
+  runtimePatch.next_retry_at = new Date(Date.parse(nowIso) + runtimePatch.probe_every_ms).toISOString();
+  runtimePatch.last_recovery_action = "entered_probe_mode_after_retryable_failure";
+  return { exhausted: true, nextFailureCount, mode: "probe", delayMs: runtimePatch.probe_every_ms };
+}
+
+export function applyNonRecoverableDispatchFailure({
+  runtimePatch,
+  dispatchKey,
+  statusMtimeMs,
+  reason,
+  probeRetryDelayMs = DEFAULT_PROBE_RETRY_DELAY_MS,
+  nowIso = new Date().toISOString(),
+  resumeSignals = {},
+  resumeSignalPaths = [],
+}) {
+  runtimePatch.last_recovery_session_id = "";
+  runtimePatch.last_dispatch_key = dispatchKey;
+  runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
+  runtimePatch.last_failure_class = "blocked_repairable";
+  runtimePatch.last_failure_reason = reason || String(runtimePatch.last_error || "blocked_dispatch_failure");
+  runtimePatch.retry_mode = "probe";
+  runtimePatch.retry_attempt = 0;
+  runtimePatch.probe_every_ms = Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
+  runtimePatch.retry_backoff_ms = runtimePatch.probe_every_ms;
+  runtimePatch.next_retry_at = new Date(Date.parse(nowIso) + runtimePatch.probe_every_ms).toISOString();
+  runtimePatch.blocked_since = String(runtimePatch.blocked_since || nowIso);
+  runtimePatch.last_dispatch_resume_signals = resumeSignals;
+  runtimePatch.last_resume_signal_paths = resumeSignalPaths;
+  runtimePatch.last_recovery_action = "blocked_repairable_waiting_for_probe_or_resume_signal";
 }
 
 export function clearDispatchFailure({ runtimePatch, failureCounts, dispatchKey, recoverySession }) {
@@ -230,6 +384,17 @@ export function clearDispatchFailure({ runtimePatch, failureCounts, dispatchKey,
   delete runtimePatch.last_error;
   delete runtimePatch.last_dispatch_failed_at;
   delete runtimePatch.last_no_reply_signal;
+  delete runtimePatch.last_transient_failure_signal;
+  delete runtimePatch.last_failure_class;
+  delete runtimePatch.last_failure_reason;
+  delete runtimePatch.retry_mode;
+  delete runtimePatch.retry_attempt;
+  delete runtimePatch.retry_backoff_ms;
+  delete runtimePatch.next_retry_at;
+  delete runtimePatch.probe_every_ms;
+  delete runtimePatch.blocked_since;
+  delete runtimePatch.last_dispatch_resume_signals;
+  delete runtimePatch.last_resume_signal_paths;
   runtimePatch.last_recovery_session_id = recoverySession;
   runtimePatch.last_recovery_action = recoverySession ? "rotated_session_after_failed_dispatch" : "";
 }

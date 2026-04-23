@@ -1,18 +1,30 @@
 import {
   applyNonRecoverableDispatchFailure,
   applyRecoverableDispatchFailure,
+  canPromoteChangedFileDispatch,
   chunkMessageText,
   clearDispatchFailure,
+  dispatchResumeSignalPaths,
   dispatchFailureCounts,
   dispatchRecoveryPlan,
   hasNoReplySignal,
+  hasTransientDeliveryFailureSignal,
+  hasTransientDispatchFailureSignal,
+  hasChangedRelativeFile,
   parseAgentPayloadTexts,
   parseLatestVerdict,
+  relativeFileSignature,
   recoverySessionId,
   runOpenClawAgent,
   sendOpenClawMessage,
+  shouldDispatchRepeated,
+  snapshotDispatchResumeSignals,
+  snapshotRelativeFileSignatures,
   stripLegacyActionMenu,
 } from "../scripts/supervisor/lib.mjs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("supervisor dispatch dedupe", () => {
   test("failed dispatch must not advance dedupe cursor", () => {
@@ -205,6 +217,76 @@ describe("supervisor dispatch dedupe", () => {
     expect(hasNoReplySignal({ stdout: "normal payload", stderr: "" })).toBe(false);
   });
 
+  test("detects transient dispatch failures from embedded runtime errors", () => {
+    expect(hasTransientDispatchFailureSignal({ stdout: "NO_REPLY", stderr: "" })).toBe(true);
+    expect(
+      hasTransientDispatchFailureSignal({
+        stdout: "",
+        stderr: "read failed: Offset 350 is beyond end of file (235 lines total)",
+      }),
+    ).toBe(true);
+    expect(
+      hasTransientDispatchFailureSignal({
+        stdout: "",
+        stderr: "[agent/embedded] embedded run agent end: id=1 isError=true error=terminated",
+      }),
+    ).toBe(true);
+    expect(hasTransientDispatchFailureSignal({ stdout: "{}", stderr: "" })).toBe(false);
+    expect(hasTransientDeliveryFailureSignal("telegram timeout 503")).toBe(true);
+  });
+
+  test("detects changed files by signature instead of mtime only", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "supervisor-signature-"));
+    const target = join(projectDir, "output.md");
+    await writeFile(target, "draft v1", "utf8");
+
+    const snapshot = snapshotRelativeFileSignatures(projectDir, ["output.md"]);
+    expect(relativeFileSignature(projectDir, "output.md")).toBe(snapshot["output.md"]);
+
+    await writeFile(target, "draft v2", "utf8");
+    expect(hasChangedRelativeFile(projectDir, snapshot)).toBe(true);
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("promotes changed-file dispatches after transient writer failures", () => {
+    expect(
+      canPromoteChangedFileDispatch({
+        dispatch: {
+          suppressDelivery: true,
+          deliverRequiresChangedFile: true,
+          afterSuccessPatch: { next_actor: "reviewer" },
+        },
+        successFilesChanged: true,
+        transientDispatchFailure: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      canPromoteChangedFileDispatch({
+        dispatch: {
+          deliverRequiresChangedFile: true,
+          afterSuccessPatchFromLatestVerdict: true,
+        },
+        successFilesChanged: true,
+        transientDispatchFailure: true,
+        parsedVerdict: "",
+      }),
+    ).toBe(false);
+
+    expect(
+      canPromoteChangedFileDispatch({
+        dispatch: {
+          deliverRequiresChangedFile: true,
+          afterSuccessPatchFromLatestVerdict: true,
+        },
+        successFilesChanged: true,
+        transientDispatchFailure: true,
+        parsedVerdict: "approved",
+      }),
+    ).toBe(true);
+  });
+
   test("normalizes dispatch failure counts", () => {
     expect(
       dispatchFailureCounts({
@@ -235,7 +317,7 @@ describe("supervisor dispatch dedupe", () => {
     expect(sessionId).toMatch(/-[a-f0-9]{12}-2$/);
   });
 
-  test("recoverable no-reply failures rotate once and then park the dispatch key", () => {
+  test("recoverable no-reply failures schedule retries and then enter probe mode", () => {
     const dispatchKey = "step7:100:writer";
     const statusMtimeMs = 100;
     const runtime = {};
@@ -256,11 +338,17 @@ describe("supervisor dispatch dedupe", () => {
       previousFailureCount: firstPlan.previousFailureCount,
       recoverySession: firstPlan.recoverySession,
       statusMtimeMs,
+      nowIso: "2026-04-23T00:00:00.000Z",
+      reason: "no_reply",
     });
 
     expect(firstPatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 1 });
-    expect(firstPatch.last_recovery_action).toBe("will_rotate_session_on_next_retry");
-    expect(firstPatch.last_dispatch_key).toBeUndefined();
+    expect(firstPatch.last_recovery_action).toBe("retry_scheduled");
+    expect(firstPatch.last_dispatch_key).toBe(dispatchKey);
+    expect(firstPatch.last_dispatch_status_mtime_ms).toBe(statusMtimeMs);
+    expect(firstPatch.retry_mode).toBe("retry");
+    expect(firstPatch.retry_backoff_ms).toBe(15_000);
+    expect(firstPatch.next_retry_at).toBe("2026-04-23T00:00:15.000Z");
 
     const retryPlan = dispatchRecoveryPlan({
       runtime: firstPatch,
@@ -279,12 +367,36 @@ describe("supervisor dispatch dedupe", () => {
       previousFailureCount: retryPlan.previousFailureCount,
       recoverySession: retryPlan.recoverySession,
       statusMtimeMs,
+      nowIso: "2026-04-23T00:01:00.000Z",
+      reason: "no_reply",
     });
 
     expect(secondPatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 2 });
-    expect(secondPatch.last_recovery_action).toBe("recovery_retries_exhausted");
+    expect(secondPatch.last_recovery_action).toBe("retry_scheduled_after_rotated_session");
     expect(secondPatch.last_dispatch_key).toBe(dispatchKey);
     expect(secondPatch.last_dispatch_status_mtime_ms).toBe(statusMtimeMs);
+    expect(secondPatch.retry_mode).toBe("retry");
+    expect(secondPatch.retry_backoff_ms).toBe(60_000);
+    expect(secondPatch.next_retry_at).toBe("2026-04-23T00:02:00.000Z");
+
+    const probePatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: probePatch,
+      failureCounts: { ...secondPatch.dispatch_failure_counts },
+      dispatchKey,
+      previousFailureCount: 2,
+      recoverySession: "",
+      statusMtimeMs,
+      nowIso: "2026-04-23T00:03:00.000Z",
+      reason: "no_reply",
+    });
+
+    expect(probePatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 3 });
+    expect(probePatch.last_recovery_action).toBe("entered_probe_mode_after_retryable_failure");
+    expect(probePatch.retry_mode).toBe("probe");
+    expect(probePatch.retry_backoff_ms).toBe(900_000);
+    expect(probePatch.next_retry_at).toBe("2026-04-23T00:18:00.000Z");
+    expect(probePatch.last_dispatch_key).toBe(dispatchKey);
   });
 
   test("successful recovery clears failure counters", () => {
@@ -293,6 +405,17 @@ describe("supervisor dispatch dedupe", () => {
       last_error: "expected_file_not_changed",
       last_dispatch_failed_at: "now",
       last_no_reply_signal: "yes",
+      last_transient_failure_signal: "yes",
+      last_failure_class: "retryable",
+      last_failure_reason: "no_reply",
+      retry_mode: "probe",
+      retry_attempt: 3,
+      retry_backoff_ms: 900000,
+      next_retry_at: "later",
+      probe_every_ms: 900000,
+      blocked_since: "before",
+      last_dispatch_resume_signals: { "output.md": "sig" },
+      last_resume_signal_paths: ["output.md"],
     };
     const failureCounts = { [dispatchKey]: 1, other: 2 };
 
@@ -307,21 +430,64 @@ describe("supervisor dispatch dedupe", () => {
     expect(runtimePatch.last_error).toBeUndefined();
     expect(runtimePatch.last_dispatch_failed_at).toBeUndefined();
     expect(runtimePatch.last_no_reply_signal).toBeUndefined();
+    expect(runtimePatch.last_transient_failure_signal).toBeUndefined();
+    expect(runtimePatch.last_failure_class).toBeUndefined();
+    expect(runtimePatch.last_failure_reason).toBeUndefined();
+    expect(runtimePatch.retry_mode).toBeUndefined();
+    expect(runtimePatch.next_retry_at).toBeUndefined();
+    expect(runtimePatch.last_dispatch_resume_signals).toBeUndefined();
     expect(runtimePatch.last_recovery_action).toBe("rotated_session_after_failed_dispatch");
   });
 
-  test("non-recoverable file-change failures park without rotating session", () => {
+  test("blocked repairable failures enter probe mode without rotating session", () => {
     const runtimePatch = {};
     applyNonRecoverableDispatchFailure({
       runtimePatch,
       dispatchKey: "step7:100:writer",
       statusMtimeMs: 100,
-      reason: "nonrecoverable_expected_file_not_changed",
+      reason: "expected_file_not_changed",
+      nowIso: "2026-04-23T00:00:00.000Z",
     });
 
     expect(runtimePatch.last_recovery_session_id).toBe("");
-    expect(runtimePatch.last_recovery_action).toBe("nonrecoverable_expected_file_not_changed");
+    expect(runtimePatch.last_recovery_action).toBe("blocked_repairable_waiting_for_probe_or_resume_signal");
     expect(runtimePatch.last_dispatch_key).toBe("step7:100:writer");
     expect(runtimePatch.last_dispatch_status_mtime_ms).toBe(100);
+    expect(runtimePatch.last_failure_class).toBe("blocked_repairable");
+    expect(runtimePatch.last_failure_reason).toBe("expected_file_not_changed");
+    expect(runtimePatch.retry_mode).toBe("probe");
+    expect(runtimePatch.next_retry_at).toBe("2026-04-23T00:15:00.000Z");
+  });
+
+  test("repeated dispatch waits for retry window unless resume signals change", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "supervisor-repeated-"));
+    const outputPath = join(projectDir, "output.md");
+    await writeFile(outputPath, "draft v1", "utf8");
+
+    expect(dispatchResumeSignalPaths({ afterSuccessWhenFilesChanged: ["output.md"], deliverFromChangedFile: "output.md" })).toEqual([
+      "output.md",
+    ]);
+
+    const resumeSignals = snapshotDispatchResumeSignals(projectDir, {
+      afterSuccessWhenFilesChanged: ["output.md"],
+      deliverFromChangedFile: "output.md",
+    });
+
+    const waitingRuntime = {
+      last_failure_class: "retryable",
+      retry_mode: "probe",
+      next_retry_at: "2099-01-01T00:00:00.000Z",
+      last_dispatch_resume_signals: resumeSignals.snapshot,
+    };
+
+    expect(shouldDispatchRepeated({ runtime: waitingRuntime, projectDir })).toEqual({
+      shouldDispatch: false,
+      reason: "waiting_for_retry_window",
+    });
+
+    await writeFile(outputPath, "draft v2", "utf8");
+    expect(shouldDispatchRepeated({ runtime: waitingRuntime, projectDir }).reason).toBe("resume_signal_changed");
+
+    await rm(projectDir, { recursive: true, force: true });
   });
 });
