@@ -99,8 +99,10 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
     expect(result.dispatch.message).toContain("read only the bound shared template file");
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
-    expect(result.dispatch.suppressDelivery).toBe(true);
-    expect(result.dispatch.deliverFromChangedFile).toBeUndefined();
+    expect(result.dispatch.suppressDelivery).toBeUndefined();
+    expect(result.dispatch.deliverFromChangedFile).toBe("output.md");
+    expect(result.dispatch.deliveryActor).toBe("main");
+    expect(result.dispatch.deliveryFailureDoesNotBlockSuccess).toBe(true);
     expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("output.md");
     expect(result.dispatch.recoveryDeliveryActor).toBe("main");
     expect(result.dispatch.stripLegacyActionMenu).toBe(true);
@@ -143,6 +145,21 @@ describe("singularity supervisor adapter", () => {
       ].join("\n"),
       "utf8"
     );
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-24T09:44:55Z | role: reviewer | type: editorial_review | target: output.md | review_target:draft",
+        "verdict=changes_requested",
+        "### MUST_FIX",
+        "1. 把中后段直论证重排为故事承载结构。",
+        "2. 继续提高科幻叙事主导占比。",
+        "### RISK_POINTS",
+        "- 说明书化段落会继续触发退稿。",
+        "### USER_GUIDANCE",
+        "下一稿继续做形态整改，而不是观点重写。",
+      ].join("\n"),
+      "utf8"
+    );
 
     const result = await tick({
       projectDir,
@@ -159,6 +176,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("继续修改一轮：名著映照段目前偏简略，请做有限增厚。");
     expect(result.dispatch.message).toContain("动作并列");
     expect(result.dispatch.message).toContain("treat it as mandatory revision input");
+    expect(result.dispatch.message).toContain("Latest reviewer review block for this draft target:");
+    expect(result.dispatch.message).toContain("把中后段直论证重排为故事承载结构");
+    expect(result.dispatch.message).toContain("MUST_FIX, RISK_POINTS, and USER_GUIDANCE as mandatory revision input");
     expect(result.dispatch.message).toContain("Step 6 axis snapshot:");
     expect(result.dispatch.message).toContain("员工智力资产的收益权与退出权");
     expect(result.dispatch.message).toContain("不得把安全场景写成文章主线");

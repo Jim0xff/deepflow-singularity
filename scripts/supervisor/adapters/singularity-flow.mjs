@@ -208,6 +208,15 @@ function latestFinalReviewerReview(projectDir) {
   );
 }
 
+function latestDraftReviewerReview(projectDir) {
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+      fieldMatches(block.review_target, "draft") &&
+      fieldMatches(block.role, "reviewer")
+    )?.raw || ""
+  );
+}
+
 function latestDraftEditorFeedback(projectDir) {
   return (
     latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
@@ -246,6 +255,7 @@ function buildStep6AxisSnapshot(projectDir) {
 
 function buildStep7WriterMessage(ctx) {
   const latestEditorFeedback = latestDraftEditorFeedback(ctx.projectDir) || "(none)";
+  const latestReviewerReview = latestDraftReviewerReview(ctx.projectDir) || "(none)";
   const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",
@@ -258,9 +268,10 @@ function buildStep7WriterMessage(ctx) {
     "Do not read templates from the project directory.",
     "Draft or revise the article draft according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory revision input and apply it before any broader rewriting.",
+    "If a latest reviewer review block is pasted below, treat its MUST_FIX, RISK_POINTS, and USER_GUIDANCE as mandatory revision input and explicitly address them in the next draft.",
     "The Step 6 axis snapshot below is the highest-priority writing contract. It outranks Step 4 counterexamples, safety exceptions, and other boundary materials.",
     "Keep counterexamples and boundary materials as supporting limits only. Do not let them become the title hook, main mechanism chain, or final judgment unless the Step 6 snapshot explicitly upgrades them.",
-    "In draft_review_history.md, explicitly state how the pasted latest editor feedback was applied.",
+    "In draft_review_history.md, explicitly state how the pasted latest editor feedback and latest reviewer review were applied.",
     "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
     "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
     "Group reply must be the latest full draft itself, not a summary or file path.",
@@ -271,6 +282,9 @@ function buildStep7WriterMessage(ctx) {
     "",
     "Latest draft-stage editor feedback block:",
     latestEditorFeedback,
+    "",
+    "Latest reviewer review block for this draft target:",
+    latestReviewerReview,
   ].join("\n");
 }
 
@@ -464,8 +478,10 @@ export async function tick(ctx) {
         dispatch: {
           key: `step7:${ctx.statusMtimeMs}:writer`,
           actor: "writer",
+          deliveryActor: "main",
+          deliveryFailureDoesNotBlockSuccess: true,
           message: buildStep7WriterMessage(ctx),
-          suppressDelivery: true,
+          deliverFromChangedFile: "output.md",
           recoveryDeliverFromChangedFile: "output.md",
           recoveryDeliveryActor: "main",
           stripLegacyActionMenu: true,

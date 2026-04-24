@@ -83,6 +83,16 @@ function log(entry) {
 const command = process.argv[2] || "";
 
 if (command === "message" && process.argv[3] === "send") {
+  if (process.env.FAKE_MESSAGE_SEND_FAIL === "1") {
+    log({
+      kind: "message_failed",
+      account: argValue("--account"),
+      target: argValue("--target"),
+      message: argValue("--message"),
+    });
+    process.stderr.write("telegram send failed");
+    process.exit(1);
+  }
   log({
     kind: "message",
     account: argValue("--account"),
@@ -101,6 +111,17 @@ if (command === "agent") {
 
   if (agentId === "singularity-writer") {
     writeFileSync(path.join(projectDir, "output.md"), "# Recovered Draft\\n\\nbody from fake writer", "utf8");
+    if (process.env.FAKE_WRITER_APPEND_HISTORY === "1") {
+      writeFileSync(
+        path.join(projectDir, "draft_review_history.md"),
+        "## 2026-04-23T10:25:00Z | role: writer | type: draft_round\\nsummary\\n",
+        "utf8",
+      );
+    }
+    if (process.env.FAKE_WRITER_EXIT_CODE === "0") {
+      process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# Recovered Draft\\n\\nbody from fake writer" }] } }));
+      process.exit(0);
+    }
   } else if (agentId === "singularity-reviewer") {
     writeFileSync(
       path.join(projectDir, "draft_review_history.md"),
@@ -678,6 +699,60 @@ describe("supervisor dispatch dedupe", () => {
       const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
       expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
       expect(logEntries.some((entry) => entry.kind === "message" && /Recovered Draft/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch advances writer after file success even when delivery fails", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+          FAKE_MESSAGE_SEND_FAIL: "1",
+          FAKE_WRITER_EXIT_CODE: "0",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+        return statusText.includes("next_actor: reviewer") ? statusText : "";
+      });
+
+      const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+      expect(runtime.last_dispatch_actor).toBe("writer");
+      expect(runtime.last_error).toBeUndefined();
+      expect(runtime.last_failure_class).toBeUndefined();
+      expect(runtime.last_recovery_action).toBe("delivery_failed_but_advanced_after_success");
+      expect(runtime.last_delivery_error).toBe("telegram send failed");
+
+      const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+      expect(statusText).toContain("next_actor: reviewer");
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      expect(logEntries.some((entry) => entry.kind === "message_failed" && entry.account === "singularity-main")).toBe(
+        true,
+      );
     } finally {
       await stopChild(child);
       await rm(rootDir, { recursive: true, force: true });

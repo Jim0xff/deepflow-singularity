@@ -188,6 +188,7 @@ function summarizeDispatch(dispatch = {}) {
     recovery_deliver_from_changed_file: String(dispatch.recoveryDeliverFromChangedFile || "").trim(),
     delivery_actor: String(dispatch.deliveryActor || "").trim(),
     recovery_delivery_actor: String(dispatch.recoveryDeliveryActor || "").trim(),
+    delivery_failure_does_not_block_success: Boolean(dispatch.deliveryFailureDoesNotBlockSuccess),
     has_after_success_patch: Boolean(dispatch.afterSuccessPatch),
     has_after_verdict_patch: Boolean(dispatch.afterSuccessPatchFromLatestVerdict),
     has_after_status_patch: Boolean(dispatch.afterStatusPatch),
@@ -522,7 +523,11 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                     delivery_actor: deliveryActorKey,
                     delivery_error_preview: previewText(nextRuntime.last_delivery_error),
                   });
-                  if (!deliveryResult.ok) {
+                  const deliveryFailureDoesNotBlockSuccess =
+                    !deliveryResult.ok &&
+                    successFilesChanged &&
+                    Boolean(result.dispatch.deliveryFailureDoesNotBlockSuccess);
+                  if (!deliveryResult.ok && !deliveryFailureDoesNotBlockSuccess) {
                     const transientDeliveryFailure = hasTransientDeliveryFailureSignal(nextRuntime.last_delivery_error);
                     dispatched = false;
                     recoverableDispatchFailed = transientDispatchFailure || transientDeliveryFailure;
@@ -534,6 +539,9 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       transientDispatchFailure || transientDeliveryFailure ? "yes" : "no";
                   } else {
                     clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
+                    if (deliveryFailureDoesNotBlockSuccess) {
+                      nextRuntime.last_recovery_action = "delivery_failed_but_advanced_after_success";
+                    }
                     nextRuntime.last_dispatch_key = dispatchKey;
                     nextRuntime.last_dispatch_actor = actor;
                     nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
