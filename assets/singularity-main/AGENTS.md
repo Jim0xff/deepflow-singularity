@@ -130,12 +130,15 @@ DRAFT_REVIEW=SEQ(DRAFT_FB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,r
 FINAL_GEN=SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
 FINAL_WRITER=SEQ(FINAL_FB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
 FINAL_REVIEW=SEQ(FINAL_FB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))
-USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->DRAFT_WRITER+step_7_menu_3TEXT->DRAFT_REVIEW+step_7_final_menu_CHANGE_OR_2TEXT->FINAL_WRITER+step_7_final_menu_3TEXT->FINAL_REVIEW+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
+D=ASSERT_SCOPE(step_7_menu)
+F=ASSERT_SCOPE(step_7_final_menu)
+USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DRAFT_WRITER)+step_7_menu_3TEXT->SEQ(D,DRAFT_REVIEW)+step_7_final_menu_CHANGE_OR_2TEXT->SEQ(F,FINAL_WRITER)+step_7_final_menu_3TEXT->SEQ(F,FINAL_REVIEW)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS=step_7_drafting
 STATE=ON_ENTER->SET(current_step=step_7_drafting,workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 AUTO=IF_auto_next_actor_writer_reviewer_final_writer->NO_BOT_UNAVAILABLE
 RETURN=DRAFT_APPROVED->SHOW_step_7_menu
 FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+step_7_final_menu+ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
+FORBIDDEN=writer_WITH(review_target=final|final_writer_mode=revise)+final_writer_WITH(review_target=draft)
 [CONTROL]
 IF_ACTION=上一步->GO_PREVIOUS_STEP+KEEP_RECORDS
 IF_ACTION=下一步->REQUIRE_CURRENT_STEP_WRITTEN+GO_NEXT_STEP
