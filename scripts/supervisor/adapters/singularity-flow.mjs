@@ -218,8 +218,35 @@ function latestDraftEditorFeedback(projectDir) {
   );
 }
 
+function extractMarkdownSection(text, heading) {
+  const escaped = String(heading || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(text || "").match(
+    new RegExp(`(?:^|\\n)###\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n###\\s+|\\n##\\s+|$)`, "i"),
+  );
+  return match ? match[1].trim() : "";
+}
+
+function buildStep6AxisSnapshot(projectDir) {
+  const handoffText = readProjectText(projectDir, "handoff.md");
+  const parts = [];
+  for (const [heading, label] of [
+    ["what_it_really_means", "WHAT_IT_REALLY_MEANS"],
+    ["surface_signal", "SURFACE_SIGNAL"],
+    ["deep_signal", "DEEP_SIGNAL"],
+    ["upgraded_interpretation", "UPGRADED_INTERPRETATION"],
+    ["allowed_boundary_topics", "ALLOWED_BOUNDARY_TOPICS"],
+    ["forbidden_expansions", "FORBIDDEN_EXPANSIONS"],
+  ]) {
+    const section = extractMarkdownSection(handoffText, heading);
+    if (!section) continue;
+    parts.push(`${label}:\n${section}`);
+  }
+  return parts.length ? parts.join("\n\n") : "(none)";
+}
+
 function buildStep7WriterMessage(ctx) {
   const latestEditorFeedback = latestDraftEditorFeedback(ctx.projectDir) || "(none)";
+  const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
@@ -231,11 +258,16 @@ function buildStep7WriterMessage(ctx) {
     "Do not read templates from the project directory.",
     "Draft or revise the article draft according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory revision input and apply it before any broader rewriting.",
+    "The Step 6 axis snapshot below is the highest-priority writing contract. It outranks Step 4 counterexamples, safety exceptions, and other boundary materials.",
+    "Keep counterexamples and boundary materials as supporting limits only. Do not let them become the title hook, main mechanism chain, or final judgment unless the Step 6 snapshot explicitly upgrades them.",
     "In draft_review_history.md, explicitly state how the pasted latest editor feedback was applied.",
     "Weave the story validation and concrete scene evidence into the article instead of dropping them from the draft.",
     "Write the latest full draft to output.md and append the full round to draft_review_history.md.",
     "Group reply must be the latest full draft itself, not a summary or file path.",
     "Do not append any menu, bot handoff options, or @bot instructions.",
+    "",
+    "Step 6 axis snapshot:",
+    step6AxisSnapshot,
     "",
     "Latest draft-stage editor feedback block:",
     latestEditorFeedback,
@@ -246,6 +278,7 @@ function buildStep7ReviewerMessage(ctx) {
   const finalReview =
     String(ctx.status?.review_target || "").trim().toLowerCase() === "final" ||
     String(ctx.status?.final_article_ready || "").trim().toLowerCase() === "yes";
+  const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   const latestEditorFeedback = finalReview
     ? latestFinalEditorFeedback(ctx.projectDir) || "(none)"
     : latestDraftEditorFeedback(ctx.projectDir) || "(none)";
@@ -260,10 +293,15 @@ function buildStep7ReviewerMessage(ctx) {
     "Do not read templates from the project directory.",
     "If status.review_target=final or status.final_article_ready=yes, review final-output.md; otherwise review output.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory review direction.",
+    "The Step 6 axis snapshot below is the highest-priority review contract. Boundary and counterexample material may support the argument, but must not replace the primary axis.",
     "Verify the current review target against every item in that block; do not say no new editor feedback exists when this block is not (none).",
     "If any item is unmet, verdict=changes_requested and MUST_FIX must restate the unmet items for the next writer pass.",
+    "If safety, high-risk, or other boundary material overtakes the Step 6 primary axis without explicit authorization in the snapshot, verdict=changes_requested and MUST_FIX must call out topic drift.",
     "Append the full review block to draft_review_history.md; include one exact line: verdict=approved or verdict=changes_requested.",
     "Group reply must be the full review block itself, not a completion summary, file path, or status update.",
+    "",
+    "Step 6 axis snapshot:",
+    step6AxisSnapshot,
     "",
     "Latest editor feedback block for this review target:",
     latestEditorFeedback,
