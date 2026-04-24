@@ -60,10 +60,10 @@ SCOPE=step_6_menu
 OPTIONS=1=PASS_TEMPLATE_GATE_THEN_WRITE_HANDOFF_AND_SET_AUTO_STEP_7_WRITER_ONLY+2=MODIFY_STEP_6_FEEDBACK_AND_SHOW_FULL_OUTPUT_AND_KEEP_STEP_6+3=WRITE_CURRENT_STAGE_RESULT_AND_RETURN_TO_STEP_5
 [STEP7_MENU]
 SCOPE=step_7_menu
-OPTIONS=1=FINAL_GEN+2=DRAFT_WRITER+3=DRAFT_REVIEW+4=EXIT_CURRENT_PROJECT
+OPTIONS=1=FG+2=DW+3=DR+4=EXIT_CURRENT_PROJECT
 [STEP7_FINAL_MENU]
 SCOPE=step_7_final_menu
-OPTIONS=1=PUBLISH_PENDING_KEEP_PROJECT+2=FINAL_WRITER+3=FINAL_REVIEW+4=EXIT_CURRENT_PROJECT
+OPTIONS=1=PUBLISH_PENDING_KEEP_PROJECT+2=FW+3=FR+4=EXIT_CURRENT_PROJECT
 [FINAL]
 SCOPE=final_delivery_menu
 OPTIONS=1=SHOW_FINAL_OUTPUT+2=SHOW_PUBLISH_STATUS+3=EXIT_CURRENT_PROJECT
@@ -126,16 +126,16 @@ TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_
 WRITE_RULE=STEP7_DRAFT_FEEDBACK->handoff.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
 FMT=STEP7_DRAFT_HEADER:## timestamp|role:editor|type:step_7_feedback|target:writer+STEP7_DRAFT_BODY:instruction:+STEP7_FINAL_HEADER:## timestamp|role:editor|type:step_7_feedback|target:final_writer|mode:revise+STEP7_FINAL_BODY:instruction:
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
-DRAFT_FB=WRITE_FEEDBACK_ONLY
-FINAL_FB=WRITE_FINAL_EDITOR_BLOCK_TO_draft_review_history.md
-DRAFT_WRITER=SEQ(DRAFT_FB,SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
-DRAFT_REVIEW=SEQ(DRAFT_FB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
-FINAL_GEN=SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
-FINAL_WRITER=SEQ(FINAL_FB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
-FINAL_REVIEW=SEQ(FINAL_FB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))
+DFB=WRITE_FEEDBACK_ONLY
+FFB=WRITE_FINAL_EDITOR_BLOCK_TO_draft_review_history.md
+DW=SEQ(DFB,SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
+DR=SEQ(DFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
+FG=SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
+FW=SEQ(FFB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
+FR=SEQ(FFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))
 D=ASSERT_SCOPE(step_7_menu)
 F=ASSERT_SCOPE(step_7_final_menu)
-USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DRAFT_WRITER)+step_7_menu_3TEXT->SEQ(D,DRAFT_REVIEW)+step_7_final_menu_CHANGE_OR_2TEXT->SEQ(F,FINAL_WRITER)+step_7_final_menu_3TEXT->SEQ(F,FINAL_REVIEW)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
+USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DW)+step_7_menu_3TEXT->SEQ(D,DR)+step_7_final_menu_CHANGE_OR_2TEXT->SEQ(F,FW)+step_7_final_menu_3TEXT->SEQ(F,FR)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS=step_7_drafting
 STATE=ON_ENTER->SET(current_step=step_7_drafting,workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 AUTO=IF_auto_next_actor_writer_reviewer_final_writer->NO_BOT_UNAVAILABLE
