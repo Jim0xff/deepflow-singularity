@@ -137,6 +137,88 @@ function resolveTelegramDelivery(projectDir) {
   return null;
 }
 
+function previewText(value, maxLength = 240) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}...`;
+}
+
+function summarizeStatus(status = {}) {
+  return {
+    status: String(status.status || "").trim(),
+    workflow_mode: String(status.workflow_mode || "").trim(),
+    current_step: String(status.current_step || "").trim(),
+    next_actor: String(status.next_actor || "").trim(),
+    awaiting_user_choice: String(status.awaiting_user_choice || "").trim(),
+    review_target: String(status.review_target || "").trim(),
+    final_article_ready: String(status.final_article_ready || "").trim(),
+    final_writer_mode: String(status.final_writer_mode || "").trim(),
+    active_menu_scope: String(status.active_menu_scope || "").trim(),
+  };
+}
+
+function summarizeRuntime(runtime = {}) {
+  return {
+    state: String(runtime.state || "").trim(),
+    pid: runtime.pid ?? null,
+    last_decision: String(runtime.last_decision || "").trim(),
+    last_dispatch_key: String(runtime.last_dispatch_key || "").trim(),
+    last_dispatch_actor: String(runtime.last_dispatch_actor || "").trim(),
+    last_failure_class: String(runtime.last_failure_class || "").trim(),
+    last_failure_reason: String(runtime.last_failure_reason || "").trim(),
+    retry_mode: String(runtime.retry_mode || "").trim(),
+    retry_attempt: Number(runtime.retry_attempt || 0) || 0,
+    next_retry_at: String(runtime.next_retry_at || "").trim(),
+    last_recovery_action: String(runtime.last_recovery_action || "").trim(),
+  };
+}
+
+function summarizeDispatch(dispatch = {}) {
+  return {
+    key: String(dispatch.key || "").trim(),
+    actor: String(dispatch.actor || "").trim(),
+    session_id: String(dispatch.sessionId || "").trim(),
+    message_chars: String(dispatch.message || "").length,
+    suppress_delivery: Boolean(dispatch.suppressDelivery),
+    deliver_requires_changed_file: Boolean(dispatch.deliverRequiresChangedFile),
+    require_latest_verdict: Boolean(dispatch.requireLatestVerdict),
+    success_files: [...(dispatch.afterSuccessWhenFilesChanged || [])],
+    deliver_from_changed_file: String(dispatch.deliverFromChangedFile || "").trim(),
+    recovery_deliver_from_changed_file: String(dispatch.recoveryDeliverFromChangedFile || "").trim(),
+    delivery_actor: String(dispatch.deliveryActor || "").trim(),
+    recovery_delivery_actor: String(dispatch.recoveryDeliveryActor || "").trim(),
+    has_after_success_patch: Boolean(dispatch.afterSuccessPatch),
+    has_after_verdict_patch: Boolean(dispatch.afterSuccessPatchFromLatestVerdict),
+    has_after_status_patch: Boolean(dispatch.afterStatusPatch),
+  };
+}
+
+function logWatchEvent(projectDir, event, details = {}) {
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      scope: "singularity_supervisor_watch",
+      project_id: path.basename(projectDir),
+      event,
+      ...details,
+    }),
+  );
+}
+
+function applyStatusPatchWithLog({ projectDir, statusPath, source, patch, details = {} }) {
+  const statusBefore = parseStatusMd(readText(statusPath));
+  updateStatusMdAtomic(statusPath, patch);
+  const statusAfter = parseStatusMd(readText(statusPath));
+  logWatchEvent(projectDir, "status_patch_applied", {
+    source,
+    patch,
+    status_before: summarizeStatus(statusBefore),
+    status_after: summarizeStatus(statusAfter),
+    ...details,
+  });
+}
+
 async function loadAdapter(adapterPath) {
   const resolved = path.isAbsolute(adapterPath) ? adapterPath : path.resolve(__dirname, adapterPath);
   const module = await import(pathToFileURL(resolved).href);
@@ -239,15 +321,29 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
     updated_at: new Date().toISOString(),
   });
   fs.writeFileSync(pidPath, `${process.pid}\n`, "utf8");
+  logWatchEvent(projectDir, "watch_started", {
+    pid: process.pid,
+    adapter: adapter.resolved,
+    poll_ms: pollMs,
+    agents: Object.fromEntries(
+      Object.entries(buildAgentRuntime(args)).map(([actor, runtime]) => [actor, runtime.agentId || ""])
+    ),
+  });
 
   try {
     while (true) {
       const statusPath = path.join(projectDir, "status.md");
       const statusText = readText(statusPath);
       const status = parseStatusMd(statusText);
-      if (shouldStop(status)) break;
-
       const runtime = readJson(runtimePath, {});
+      if (shouldStop(status)) {
+        logWatchEvent(projectDir, "watch_stop_requested", {
+          reason: stopReason(status) || "watch_stopped",
+          status: summarizeStatus(status),
+          runtime: summarizeRuntime(runtime),
+        });
+        break;
+      }
       const statusMtimeMs = fileMtimeMs(statusPath);
       const agentRuntime = buildAgentRuntime(args);
       const result = await adapter.tick({
@@ -277,6 +373,15 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
         Object.assign(nextRuntime, result.runtimePatch);
       }
 
+      logWatchEvent(projectDir, "tick_evaluated", {
+        status: summarizeStatus(status),
+        runtime: summarizeRuntime(runtime),
+        status_mtime_ms: statusMtimeMs,
+        delay_ms: Number(result?.delayMs || pollMs || 15_000),
+        adapter_decision: String(result?.runtimePatch?.last_decision || "").trim(),
+        dispatch: result?.dispatch ? summarizeDispatch(result.dispatch) : null,
+      });
+
       if (result?.dispatch) {
         const dispatchKey = String(result.dispatch.key || "");
         const repeated =
@@ -294,6 +399,17 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             projectDir,
             result.dispatch,
           );
+          logWatchEvent(projectDir, "dispatch_attempt", {
+            actor,
+            dispatch_key: dispatchKey,
+            repeated,
+            repeated_reason: repeated ? String(repeatedDecision.reason || "") : "",
+            status: summarizeStatus(status),
+            runtime: summarizeRuntime(runtime),
+            dispatch: summarizeDispatch(result.dispatch),
+            resume_signal_paths: resumeSignalPaths,
+            resume_signals: resumeSignals,
+          });
           let run = { status: 1, stdout: "", stderr: "" };
           if (!agent?.agentId) {
             nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
@@ -306,6 +422,13 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               nowIso: dispatchStartedAtIso,
               resumeSignals,
               resumeSignalPaths,
+            });
+            logWatchEvent(projectDir, "dispatch_blocked", {
+              actor,
+              dispatch_key: dispatchKey,
+              reason: `unknown_actor:${actor}`,
+              status: summarizeStatus(status),
+              runtime_after: summarizeRuntime(nextRuntime),
             });
           } else {
             const { failureCounts, previousFailureCount, recoverySession } = dispatchRecoveryPlan({
@@ -324,10 +447,20 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               projectDir,
               result.dispatch.afterSuccessWhenFilesChanged,
             );
+            const dispatchSessionId = result.dispatch.sessionId || recoverySession || agent.sessionId;
+            logWatchEvent(projectDir, "dispatch_launching_agent", {
+              actor,
+              dispatch_key: dispatchKey,
+              agent_id: agent.agentId,
+              session_id: dispatchSessionId,
+              recovery_session_id: recoverySession,
+              previous_failure_count: previousFailureCount,
+              success_file_snapshot: successFileSnapshot,
+            });
             run = runOpenClawAgent({
               agentId: agent.agentId,
               message: result.dispatch.message,
-              sessionId: result.dispatch.sessionId || recoverySession || agent.sessionId,
+              sessionId: dispatchSessionId,
               openclawNode: OPENCLAW_NODE,
               openclawCli: OPENCLAW_CLI,
             });
@@ -338,6 +471,17 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
               ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
               : "";
+            logWatchEvent(projectDir, "dispatch_agent_completed", {
+              actor,
+              dispatch_key: dispatchKey,
+              exit_code: run.status ?? 1,
+              no_reply: noReply,
+              transient_failure: transientDispatchFailure,
+              success_files_changed: successFilesChanged,
+              parsed_verdict: parsedVerdict,
+              stdout_preview: previewText(run.stdout),
+              stderr_preview: previewText(run.stderr),
+            });
             let recoverableDispatchFailed = false;
             let blockedDispatchFailureReason = "";
             if (dispatched) {
@@ -368,6 +512,16 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                         dispatch: { ...result.dispatch, projectDir },
                         nextRuntime,
                       });
+                  logWatchEvent(projectDir, "dispatch_delivery_result", {
+                    actor,
+                    dispatch_key: dispatchKey,
+                    suppressed: Boolean(result.dispatch.suppressDelivery),
+                    ok: Boolean(deliveryResult.ok),
+                    sent: Number(deliveryResult.sent || 0),
+                    failed: Number(deliveryResult.failed || 0),
+                    delivery_actor: deliveryActorKey,
+                    delivery_error_preview: previewText(nextRuntime.last_delivery_error),
+                  });
                   if (!deliveryResult.ok) {
                     const transientDeliveryFailure = hasTransientDeliveryFailureSignal(nextRuntime.last_delivery_error);
                     dispatched = false;
@@ -385,26 +539,56 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                     nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
                     nextRuntime.last_dispatch_at = dispatchStartedAtIso;
                     if (result.dispatch.afterSuccessPatch && successFilesChanged) {
-                      updateStatusMdAtomic(statusPath, {
-                        ...result.dispatch.afterSuccessPatch,
-                        updated_at: dispatchStartedAtIso,
+                      applyStatusPatchWithLog({
+                        projectDir,
+                        statusPath,
+                        source: "after_success_patch",
+                        patch: {
+                          ...result.dispatch.afterSuccessPatch,
+                          updated_at: dispatchStartedAtIso,
+                        },
+                        details: {
+                          actor,
+                          dispatch_key: dispatchKey,
+                          parsed_verdict: parsedVerdict,
+                        },
                       });
                       dispatched = false;
                     }
                     if (result.dispatch.afterSuccessPatchFromLatestVerdict && successFilesChanged) {
                       const patch = verdictPatch(parsedVerdict, status);
                       if (patch) {
-                        updateStatusMdAtomic(statusPath, {
-                          ...patch,
-                          updated_at: dispatchStartedAtIso,
+                        applyStatusPatchWithLog({
+                          projectDir,
+                          statusPath,
+                          source: "after_success_patch_from_latest_verdict",
+                          patch: {
+                            ...patch,
+                            updated_at: dispatchStartedAtIso,
+                          },
+                          details: {
+                            actor,
+                            dispatch_key: dispatchKey,
+                            parsed_verdict: parsedVerdict,
+                          },
                         });
                         dispatched = false;
                       }
                     }
                     if (result.dispatch.afterStatusPatch) {
-                      updateStatusMdAtomic(statusPath, {
-                        ...result.dispatch.afterStatusPatch,
-                        updated_at: dispatchStartedAtIso,
+                      applyStatusPatchWithLog({
+                        projectDir,
+                        statusPath,
+                        source: "after_status_patch",
+                        patch: {
+                          ...result.dispatch.afterStatusPatch,
+                          updated_at: dispatchStartedAtIso,
+                        },
+                        details: {
+                          actor,
+                          dispatch_key: dispatchKey,
+                          parsed_verdict: parsedVerdict,
+                        },
                       });
                       dispatched = false;
                     }
@@ -420,7 +604,8 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               });
               if (promoteChangedFiles) {
                 const recoveryDeliveryPath = String(result.dispatch.recoveryDeliverFromChangedFile || "").trim();
-                const recoveryDeliveryActorKey = result.dispatch.recoveryDeliveryActor || result.dispatch.deliveryActor || actor;
+                const recoveryDeliveryActorKey =
+                  result.dispatch.recoveryDeliveryActor || result.dispatch.deliveryActor || actor;
                 const recoveryDeliveryAgent = agentRuntime[recoveryDeliveryActorKey] || deliveryAgent || agent;
                 const recoveryDelivery = {
                   ...delivery,
@@ -439,6 +624,17 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       nextRuntime,
                     })
                   : { ok: true, sent: 0, failed: 0 };
+                logWatchEvent(projectDir, "dispatch_changed_file_promotion", {
+                  actor,
+                  dispatch_key: dispatchKey,
+                  parsed_verdict: parsedVerdict,
+                  recovery_delivery_path: recoveryDeliveryPath,
+                  recovery_delivery_actor: recoveryDeliveryActorKey,
+                  recovery_delivery_ok: Boolean(recoveryDeliveryResult.ok),
+                  recovery_delivery_sent: Number(recoveryDeliveryResult.sent || 0),
+                  recovery_delivery_failed: Number(recoveryDeliveryResult.failed || 0),
+                  recovery_delivery_error_preview: previewText(nextRuntime.last_delivery_error),
+                });
                 clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
                 nextRuntime.last_recovery_action = recoveryDeliveryPath
                   ? recoveryDeliveryResult.ok
@@ -452,26 +648,56 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
                 nextRuntime.last_dispatch_at = dispatchStartedAtIso;
                 if (result.dispatch.afterSuccessPatch) {
-                  updateStatusMdAtomic(statusPath, {
-                    ...result.dispatch.afterSuccessPatch,
-                    updated_at: dispatchStartedAtIso,
+                  applyStatusPatchWithLog({
+                    projectDir,
+                    statusPath,
+                    source: "changed_file_promotion_after_success_patch",
+                    patch: {
+                      ...result.dispatch.afterSuccessPatch,
+                      updated_at: dispatchStartedAtIso,
+                    },
+                    details: {
+                      actor,
+                      dispatch_key: dispatchKey,
+                      parsed_verdict: parsedVerdict,
+                    },
                   });
                   dispatched = false;
                 }
                 if (result.dispatch.afterSuccessPatchFromLatestVerdict && parsedVerdict) {
                   const patch = verdictPatch(parsedVerdict, status);
                   if (patch) {
-                    updateStatusMdAtomic(statusPath, {
-                      ...patch,
-                      updated_at: dispatchStartedAtIso,
+                    applyStatusPatchWithLog({
+                      projectDir,
+                      statusPath,
+                      source: "changed_file_promotion_after_latest_verdict",
+                      patch: {
+                        ...patch,
+                        updated_at: dispatchStartedAtIso,
+                      },
+                      details: {
+                        actor,
+                        dispatch_key: dispatchKey,
+                        parsed_verdict: parsedVerdict,
+                      },
                     });
                     dispatched = false;
                   }
                 }
                 if (result.dispatch.afterStatusPatch) {
-                  updateStatusMdAtomic(statusPath, {
-                    ...result.dispatch.afterStatusPatch,
-                    updated_at: dispatchStartedAtIso,
+                  applyStatusPatchWithLog({
+                    projectDir,
+                    statusPath,
+                    source: "changed_file_promotion_after_status_patch",
+                    patch: {
+                      ...result.dispatch.afterStatusPatch,
+                      updated_at: dispatchStartedAtIso,
+                    },
+                    details: {
+                      actor,
+                      dispatch_key: dispatchKey,
+                      parsed_verdict: parsedVerdict,
+                    },
                   });
                   dispatched = false;
                 }
@@ -505,6 +731,12 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 resumeSignals,
                 resumeSignalPaths,
               });
+              logWatchEvent(projectDir, "dispatch_recoverable_failure", {
+                actor,
+                dispatch_key: dispatchKey,
+                error: String(nextRuntime.last_error || "retryable_dispatch_failure"),
+                runtime_after: summarizeRuntime(nextRuntime),
+              });
             } else if (blockedDispatchFailureReason) {
               applyNonRecoverableDispatchFailure({
                 runtimePatch: nextRuntime,
@@ -515,12 +747,32 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 resumeSignals,
                 resumeSignalPaths,
               });
+              logWatchEvent(projectDir, "dispatch_blocked_failure", {
+                actor,
+                dispatch_key: dispatchKey,
+                error: blockedDispatchFailureReason,
+                runtime_after: summarizeRuntime(nextRuntime),
+              });
             }
             nextRuntime.last_dispatch_message = result.dispatch.message;
             nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
             nextRuntime.last_dispatch_stderr = String(run.stderr || "").trim();
             nextRuntime.last_dispatch_exit_code = run.status ?? 1;
+            logWatchEvent(projectDir, "dispatch_recorded", {
+              actor,
+              dispatch_key: dispatchKey,
+              exit_code: nextRuntime.last_dispatch_exit_code,
+              runtime_after: summarizeRuntime(nextRuntime),
+            });
           }
+        } else {
+          logWatchEvent(projectDir, "dispatch_skipped_repeated", {
+            dispatch_key: dispatchKey,
+            actor: String(result.dispatch.actor || "").trim(),
+            reason: String(repeatedDecision.reason || ""),
+            status: summarizeStatus(status),
+            runtime: summarizeRuntime(runtime),
+          });
         }
       }
 
@@ -529,9 +781,19 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
       const nextDelayMs = Number(result?.delayMs || pollMs || 15_000);
       await new Promise((resolve) => setTimeout(resolve, dispatched ? 2_000 : nextDelayMs));
     }
+  } catch (error) {
+    logWatchEvent(projectDir, "watch_fatal_error", {
+      error: previewText(error?.stack || error || "watch_failed", 400),
+    });
+    throw error;
   } finally {
     const finalRuntime = readJson(runtimePath, {});
     const finalStatus = parseStatusMd(readText(path.join(projectDir, "status.md")));
+    logWatchEvent(projectDir, "watch_exited", {
+      reason: stopReason(finalStatus) || "watch_stopped",
+      status: summarizeStatus(finalStatus),
+      runtime: summarizeRuntime(finalRuntime),
+    });
     writeJson(runtimePath, {
       ...finalRuntime,
       state: "exited",
@@ -581,13 +843,14 @@ async function main() {
     console.log(JSON.stringify({ ok: true, reused: true, pid: existing.pid, projectDir }, null, 2));
     return;
   }
+  const stalePid = existing.pid || null;
   if (existing.pid) {
     writeJson(runtimePath, {
       ...existing,
       state: "stale",
       pid: null,
       project_dir: projectDir,
-      stale_pid: existing.pid,
+      stale_pid: stalePid,
       updated_at: new Date().toISOString(),
     });
     if (fs.existsSync(pidPath)) fs.unlinkSync(pidPath);
@@ -620,7 +883,7 @@ async function main() {
   });
   fs.writeFileSync(pidPath, `${child.pid}\n`, "utf8");
 
-  console.log(JSON.stringify({ ok: true, reused: false, pid: child.pid, projectDir }, null, 2));
+  console.log(JSON.stringify({ ok: true, reused: false, pid: child.pid, projectDir, stalePid }, null, 2));
 }
 
 main().catch((error) => {

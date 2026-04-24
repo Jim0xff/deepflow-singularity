@@ -5,6 +5,46 @@ import { tmpdir } from "node:os";
 import { createSingularitySupervisorManager } from "../dist/runtime/singularity-supervisor-manager.js";
 
 describe("singularity supervisor manager", () => {
+  test("logs supervisor start metadata when ensuring current project", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-manager-log-"));
+    const scriptPath = join(root, "fake-supervisor-json.mjs");
+    const step7Dir = join(root, "project-step7");
+    const infoLogs = [];
+
+    await mkdir(step7Dir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-step7\n", "utf8");
+    await writeFile(
+      join(step7Dir, "status.md"),
+      "workflow_mode: auto\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: writer\nawaiting_user_choice: no\n",
+      "utf8",
+    );
+    await writeFile(
+      scriptPath,
+      `console.log(JSON.stringify({ ok: true, reused: true, pid: 4321, stalePid: 1234, projectDir: process.argv.at(-1) }));\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      logger: {
+        info: (message) => infoLogs.push(message),
+        warn: () => {},
+        error: () => {},
+      },
+    });
+
+    await manager.runNow();
+
+    expect(infoLogs.some((message) => message.includes('"reused":true'))).toBe(true);
+    expect(infoLogs.some((message) => message.includes('"pid":4321'))).toBe(true);
+    expect(infoLogs.some((message) => message.includes('"stale_pid":1234'))).toBe(true);
+    expect(infoLogs.some((message) => message.includes('"next_actor":"writer"'))).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
   test("starts supervisor only for auto step_5/step_7 projects", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-manager-"));
     const callsPath = join(root, "calls.log");

@@ -9,6 +9,15 @@ type Logger = {
   error: (message: string) => void;
 };
 
+type SupervisorStartResult = {
+  reused?: boolean;
+  pid?: number | null;
+  projectDir?: string;
+  stalePid?: number | null;
+  stdout?: string;
+  stderr?: string;
+};
+
 type SingularitySupervisorManagerOptions = {
   projectsRoot: string;
   intervalMs: number;
@@ -108,8 +117,20 @@ export function createSingularitySupervisorManager(
 
     inFlight.add(projectDir);
     try {
-      await runSupervisorStart(scriptPath, projectDir);
-      logger.info(`[singularity-supervisor] ensured ${projectId}`);
+      const startResult = await runSupervisorStart(scriptPath, projectDir);
+      logger.info(
+        `[singularity-supervisor] ensured ${projectId} ${JSON.stringify({
+          reused: startResult.reused ?? null,
+          pid: startResult.pid ?? null,
+          stale_pid: startResult.stalePid ?? null,
+          current_step: String(status.current_step || "").trim(),
+          next_actor: String(status.next_actor || "").trim(),
+          awaiting_user_choice: String(status.awaiting_user_choice || "").trim(),
+          workflow_mode: String(status.workflow_mode || "").trim(),
+          runtime_stdout: clipText(startResult.stdout),
+          runtime_stderr: clipText(startResult.stderr),
+        })}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(`[singularity-supervisor] failed ${projectId}: ${message}`);
@@ -249,6 +270,45 @@ function shouldEnsureDocsBinding(status: Record<string, string>): boolean {
   return bindingState !== "bound";
 }
 
+function clipText(value: string | undefined, maxLength = 200): string {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}...`;
+}
+
+function parseSupervisorStartOutput(stdout: string, stderr: string): SupervisorStartResult {
+  const trimmed = String(stdout || "").trim();
+  if (!trimmed) return { stdout, stderr };
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    return {
+      reused: typeof parsed.reused === "boolean" ? parsed.reused : undefined,
+      pid: Number.isFinite(Number(parsed.pid)) ? Number(parsed.pid) : null,
+      projectDir: typeof parsed.projectDir === "string" ? parsed.projectDir : undefined,
+      stalePid: Number.isFinite(Number(parsed.stalePid)) ? Number(parsed.stalePid) : null,
+      stdout,
+      stderr,
+    };
+  } catch {
+    const match = trimmed.match(/(\{[\s\S]*\})\s*$/);
+    if (!match) return { stdout, stderr };
+    try {
+      const parsed = JSON.parse(match[1]) as Record<string, unknown>;
+      return {
+        reused: typeof parsed.reused === "boolean" ? parsed.reused : undefined,
+        pid: Number.isFinite(Number(parsed.pid)) ? Number(parsed.pid) : null,
+        projectDir: typeof parsed.projectDir === "string" ? parsed.projectDir : undefined,
+        stalePid: Number.isFinite(Number(parsed.stalePid)) ? Number(parsed.stalePid) : null,
+        stdout,
+        stderr,
+      };
+    } catch {
+      return { stdout, stderr };
+    }
+  }
+}
+
 function shouldClearProjectPointers(status: Record<string, string>): boolean {
   const projectStatus = String(status.status || "").trim();
   const currentStep = resolveCurrentStep(status);
@@ -259,20 +319,35 @@ function didAgentUnbindDocs(status: Record<string, string>): boolean {
   return String(status.docs_binding_state || "").trim().toLowerCase() === "unbound";
 }
 
-function runSupervisorStart(scriptPath: string, projectDir: string): Promise<void> {
+function runSupervisorStart(scriptPath: string, projectDir: string): Promise<SupervisorStartResult> {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [scriptPath, "start", "--project-dir", projectDir], {
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
       detached: false,
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
     });
 
     child.on("error", rejectPromise);
     child.on("exit", (code, signal) => {
       if (code === 0) {
-        resolvePromise();
+        resolvePromise(parseSupervisorStartOutput(stdout, stderr));
         return;
       }
-      rejectPromise(new Error(`start failed code=${code ?? "null"} signal=${signal ?? "null"}`));
+      rejectPromise(
+        new Error(
+          `start failed code=${code ?? "null"} signal=${signal ?? "null"} stdout=${clipText(stdout)} stderr=${clipText(stderr)}`,
+        ),
+      );
     });
   });
 }
