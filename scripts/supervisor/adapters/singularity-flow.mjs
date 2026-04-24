@@ -217,6 +217,24 @@ function latestDraftReviewerReview(projectDir) {
   );
 }
 
+function latestReviewerFeedbackRecord(projectDir, reviewTarget) {
+  try {
+    const parsed = JSON.parse(readProjectText(projectDir, path.join("runtime", "reviewer-feedback.json")) || "{}");
+    const items = Array.isArray(parsed.items) ? parsed.items : [];
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (String(item?.review_target || "").trim().toLowerCase() !== String(reviewTarget || "").trim().toLowerCase()) {
+        continue;
+      }
+      const block = String(item?.block || "").trim();
+      if (block) return block;
+    }
+  } catch {
+    // Fall back to parsing the markdown history file.
+  }
+  return "";
+}
+
 function latestDraftEditorFeedback(projectDir) {
   return (
     latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
@@ -255,7 +273,8 @@ function buildStep6AxisSnapshot(projectDir) {
 
 function buildStep7WriterMessage(ctx) {
   const latestEditorFeedback = latestDraftEditorFeedback(ctx.projectDir) || "(none)";
-  const latestReviewerReview = latestDraftReviewerReview(ctx.projectDir) || "(none)";
+  const latestReviewerReview =
+    latestReviewerFeedbackRecord(ctx.projectDir, "draft") || latestDraftReviewerReview(ctx.projectDir) || "(none)";
   const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",

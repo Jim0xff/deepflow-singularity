@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -120,6 +120,7 @@ describe("singularity supervisor adapter", () => {
 
   test("dispatches writer with latest draft-stage editor feedback block pasted from handoff", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-writer-feedback-"));
+    await mkdir(join(projectDir, "runtime"), { recursive: true });
     await writeFile(
       join(projectDir, "handoff.md"),
       [
@@ -146,18 +147,31 @@ describe("singularity supervisor adapter", () => {
       "utf8"
     );
     await writeFile(
-      join(projectDir, "draft_review_history.md"),
-      [
-        "## 2026-04-24T09:44:55Z | role: reviewer | type: editorial_review | target: output.md | review_target:draft",
-        "verdict=changes_requested",
-        "### MUST_FIX",
-        "1. 把中后段直论证重排为故事承载结构。",
-        "2. 继续提高科幻叙事主导占比。",
-        "### RISK_POINTS",
-        "- 说明书化段落会继续触发退稿。",
-        "### USER_GUIDANCE",
-        "下一稿继续做形态整改，而不是观点重写。",
-      ].join("\n"),
+      join(projectDir, "runtime", "reviewer-feedback.json"),
+      JSON.stringify(
+        {
+          items: [
+            {
+              ts: "2026-04-24T09:44:55Z",
+              review_target: "draft",
+              verdict: "changes_requested",
+              block: [
+                "## 2026-04-24T09:44:55Z | role: reviewer | type: editorial_review | target: output.md | review_target:draft",
+                "verdict=changes_requested",
+                "### MUST_FIX",
+                "1. 把中后段直论证重排为故事承载结构。",
+                "2. 继续提高科幻叙事主导占比。",
+                "### RISK_POINTS",
+                "- 说明书化段落会继续触发退稿。",
+                "### USER_GUIDANCE",
+                "下一稿继续做形态整改，而不是观点重写。",
+              ].join("\n"),
+            },
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
       "utf8"
     );
 
@@ -184,6 +198,35 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("不得把安全场景写成文章主线");
     expect(result.dispatch.message).toContain("Keep counterexamples and boundary materials as supporting limits only");
     expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("writer falls back to draft_review_history when reviewer feedback cache is absent", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-writer-review-fallback-"));
+    await writeFile(join(projectDir, "handoff.md"), "## step_6_feedback\n### what_it_really_means\n主轴。\n", "utf8");
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-24T09:44:55Z | role: reviewer | type: editorial_review | target: output.md | review_target:draft",
+        "verdict=changes_requested",
+        "### MUST_FIX",
+        "1. 保留 fallback 能力。",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1200,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "writer",
+      },
+    });
+
+    expect(result.dispatch.message).toContain("保留 fallback 能力。");
 
     await rm(projectDir, { recursive: true, force: true });
   });

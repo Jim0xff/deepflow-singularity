@@ -220,6 +220,27 @@ function applyStatusPatchWithLog({ projectDir, statusPath, source, patch, detail
   });
 }
 
+function persistLatestReviewerFeedback({ projectDir, parsedVerdict, status, dispatchedAtIso }) {
+  const block = latestMarkdownBlock(readText(path.join(projectDir, "draft_review_history.md")));
+  if (!block || !/\brole\s*[:=]\s*reviewer\b/i.test(block)) return;
+
+  const reviewTarget =
+    String(status?.review_target || "").trim().toLowerCase() === "final" ||
+    String(status?.final_article_ready || "").trim().toLowerCase() === "yes"
+      ? "final"
+      : "draft";
+  const filePath = path.join(projectDir, "runtime", "reviewer-feedback.json");
+  const existing = readJson(filePath, {});
+  const items = Array.isArray(existing.items) ? existing.items : [];
+  items.push({
+    ts: String(dispatchedAtIso || new Date().toISOString()),
+    review_target: reviewTarget,
+    verdict: String(parsedVerdict || "").trim().toLowerCase(),
+    block,
+  });
+  writeJson(filePath, { items: items.slice(-20) });
+}
+
 async function loadAdapter(adapterPath) {
   const resolved = path.isAbsolute(adapterPath) ? adapterPath : path.resolve(__dirname, adapterPath);
   const module = await import(pathToFileURL(resolved).href);
@@ -546,6 +567,14 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                     nextRuntime.last_dispatch_actor = actor;
                     nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
                     nextRuntime.last_dispatch_at = dispatchStartedAtIso;
+                    if (actor === "reviewer" && successFilesChanged) {
+                      persistLatestReviewerFeedback({
+                        projectDir,
+                        parsedVerdict,
+                        status,
+                        dispatchedAtIso: dispatchStartedAtIso,
+                      });
+                    }
                     if (result.dispatch.afterSuccessPatch && successFilesChanged) {
                       applyStatusPatchWithLog({
                         projectDir,
@@ -655,6 +684,14 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 nextRuntime.last_dispatch_actor = actor;
                 nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
                 nextRuntime.last_dispatch_at = dispatchStartedAtIso;
+                if (actor === "reviewer" && parsedVerdict) {
+                  persistLatestReviewerFeedback({
+                    projectDir,
+                    parsedVerdict,
+                    status,
+                    dispatchedAtIso: dispatchStartedAtIso,
+                  });
+                }
                 if (result.dispatch.afterSuccessPatch) {
                   applyStatusPatchWithLog({
                     projectDir,

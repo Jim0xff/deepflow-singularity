@@ -799,6 +799,11 @@ describe("supervisor dispatch dedupe", () => {
       expect(runtime.last_dispatch_actor).toBe("reviewer");
       expect(runtime.last_recovery_action).toBe("accepted_changed_files_after_transient_failure_and_delivered_from_file");
       expect(runtime.last_failure_class).toBeUndefined();
+      const reviewerFeedback = JSON.parse(await readFile(join(projectDir, "runtime", "reviewer-feedback.json"), "utf8"));
+      expect(Array.isArray(reviewerFeedback.items)).toBe(true);
+      expect(reviewerFeedback.items.at(-1).review_target).toBe("draft");
+      expect(reviewerFeedback.items.at(-1).verdict).toBe("approved");
+      expect(reviewerFeedback.items.at(-1).block).toMatch(/verdict: approved|verdict=approved/i);
 
       const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
       expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
