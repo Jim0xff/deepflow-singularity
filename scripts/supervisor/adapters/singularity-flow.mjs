@@ -275,14 +275,29 @@ function latestReviewerFeedbackRecord(projectDir, reviewTarget) {
   return "";
 }
 
-function latestDraftEditorFeedback(projectDir) {
+function latestDraftReviewerReviewBlock(projectDir) {
+  const cached = latestReviewerFeedbackRecord(projectDir, "draft");
+  if (cached) return parseHistoryBlock(cached);
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
+      fieldMatches(block.review_target, "draft") &&
+      fieldMatches(block.role, "reviewer")
+    ) || null
+  );
+}
+
+function latestDraftWriterFeedbackBlock(projectDir) {
   return (
     latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
       fieldMatches(block.role, "editor") &&
       fieldMatches(block.type, "step_7_feedback") &&
       fieldMatches(block.target, "writer")
-    )?.raw || ""
+    ) || null
   );
+}
+
+function latestDraftEditorFeedback(projectDir) {
+  return latestDraftWriterFeedbackBlock(projectDir)?.raw || "";
 }
 
 function latestDraftReviewerFeedbackBlock(projectDir) {
@@ -314,6 +329,21 @@ function latestDraftReviewContractFeedback(projectDir) {
     return reviewerBlock.raw || "";
   }
   return latestDraftEditorFeedback(projectDir) || "";
+}
+
+function latestDraftWriterContractFeedback(projectDir) {
+  const writerBlock = latestDraftWriterFeedbackBlock(projectDir);
+  const reviewerBlock = latestDraftReviewerFeedbackBlock(projectDir);
+  const reviewerReviewBlock = latestDraftReviewerReviewBlock(projectDir);
+  if (
+    reviewerBlock &&
+    reviewerReviewBlock &&
+    blockTimestampMs(reviewerReviewBlock) >= blockTimestampMs(reviewerBlock) &&
+    blockTimestampMs(reviewerBlock) >= blockTimestampMs(writerBlock)
+  ) {
+    return reviewerBlock.raw || "";
+  }
+  return writerBlock?.raw || reviewerBlock?.raw || "";
 }
 
 function latestFinalReviewContractFeedback(projectDir) {
@@ -351,9 +381,8 @@ function buildStep6AxisSnapshot(projectDir) {
 }
 
 function buildStep7WriterMessage(ctx) {
-  const latestEditorFeedback = latestDraftEditorFeedback(ctx.projectDir) || "(none)";
-  const latestReviewerReview =
-    latestReviewerFeedbackRecord(ctx.projectDir, "draft") || latestDraftReviewerReview(ctx.projectDir) || "(none)";
+  const latestEditorFeedback = latestDraftWriterContractFeedback(ctx.projectDir) || "(none)";
+  const latestReviewerReview = latestDraftReviewerReviewBlock(ctx.projectDir)?.raw || "(none)";
   const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",

@@ -237,6 +237,80 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches writer with reviewer-target draft editor contract after re-review changes_requested", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-writer-rereview-contract-"));
+    await mkdir(join(projectDir, "runtime"), { recursive: true });
+    await writeFile(join(projectDir, "handoff.md"), "## step_6_feedback\n### what_it_really_means\n主轴不变。\n", "utf8");
+    await writeFile(join(projectDir, "output.md"), "# 标题\n\n正文。\n", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2026-04-27T13:50:00Z"), new Date("2026-04-27T13:50:00Z"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-27 13:26:21 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
+        "旧 writer 合同：只补标题，不改正文段落。",
+        "",
+        "## 2026-04-27 13:31:21 UTC|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "新 reviewer 合同：把“拍板三件事”改成动作链，删掉“接下来两周若...若...”拖尾。",
+        "",
+        "## 2026-04-27 13:36:39 UTC|role:reviewer|type:editorial_review|target:output.md|review_target:draft|verdict:changes_requested",
+        "verdict=changes_requested",
+        "### MUST_FIX",
+        "1. 把“拍板三件事”改成动作链。",
+        "2. 删除“接下来两周若...若...”拖尾。",
+        "### USER_GUIDANCE",
+        "仅重写“所以周五下午那间办公室里...”至文末。",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(projectDir, "runtime", "reviewer-feedback.json"),
+      JSON.stringify(
+        {
+          items: [
+            {
+              ts: "2026-04-27T13:36:39Z",
+              review_target: "draft",
+              verdict: "changes_requested",
+              block: [
+                "## 2026-04-27 13:36:39 UTC|role:reviewer|type:editorial_review|target:output.md|review_target:draft|verdict:changes_requested",
+                "verdict=changes_requested",
+                "### MUST_FIX",
+                "1. 把“拍板三件事”改成动作链。",
+                "2. 删除“接下来两周若...若...”拖尾。",
+                "### USER_GUIDANCE",
+                "仅重写“所以周五下午那间办公室里...”至文末。",
+              ].join("\n"),
+            },
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1300,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "writer",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("writer");
+    expect(result.dispatch.message).toContain("Latest draft-stage editor feedback block:");
+    expect(result.dispatch.message).toContain("新 reviewer 合同：把“拍板三件事”改成动作链");
+    expect(result.dispatch.message).not.toContain("旧 writer 合同：只补标题，不改正文段落。");
+    expect(result.dispatch.message).toContain("Latest reviewer review block for this draft target:");
+    expect(result.dispatch.message).toContain("删除“接下来两周若...若...”拖尾");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("dispatches reviewer with writer-target draft feedback from draft_review_history when reviewing a rewritten draft", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-feedback-"));
     await writeFile(
