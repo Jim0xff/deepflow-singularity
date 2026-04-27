@@ -207,6 +207,16 @@ function logWatchEvent(projectDir, event, details = {}) {
   );
 }
 
+function appendDispatchHistory(projectDir, entry = {}) {
+  const filePath = path.join(projectDir, "runtime", "dispatch-history.jsonl");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(
+    filePath,
+    `${JSON.stringify({ ts: new Date().toISOString(), project_id: path.basename(projectDir), ...entry })}\n`,
+    "utf8",
+  );
+}
+
 function applyStatusPatchWithLog({ projectDir, statusPath, source, patch, details = {} }) {
   const statusBefore = parseStatusMd(readText(statusPath));
   updateStatusMdAtomic(statusPath, patch);
@@ -479,6 +489,17 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               previous_failure_count: previousFailureCount,
               success_file_snapshot: successFileSnapshot,
             });
+            appendDispatchHistory(projectDir, {
+              event: "dispatch_prompt",
+              dispatch_key: dispatchKey,
+              actor,
+              agent_id: agent.agentId,
+              session_id: dispatchSessionId,
+              status: summarizeStatus(status),
+              runtime: summarizeRuntime(runtime),
+              dispatch: summarizeDispatch(result.dispatch),
+              message: String(result.dispatch.message || ""),
+            });
             run = runOpenClawAgent({
               agentId: agent.agentId,
               message: result.dispatch.message,
@@ -503,6 +524,18 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               parsed_verdict: parsedVerdict,
               stdout_preview: previewText(run.stdout),
               stderr_preview: previewText(run.stderr),
+            });
+            appendDispatchHistory(projectDir, {
+              event: "dispatch_result",
+              dispatch_key: dispatchKey,
+              actor,
+              exit_code: run.status ?? 1,
+              no_reply: noReply,
+              transient_failure: transientDispatchFailure,
+              success_files_changed: successFilesChanged,
+              parsed_verdict: parsedVerdict,
+              stdout: String(run.stdout || ""),
+              stderr: String(run.stderr || ""),
             });
             let recoverableDispatchFailed = false;
             let blockedDispatchFailureReason = "";

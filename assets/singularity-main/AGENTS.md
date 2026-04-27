@@ -124,12 +124,12 @@ TB=BIND_project.md.template_id+handoff.md.template_id
 ES=ENTER_STEP7
 TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_MISSING->ASK_AND_BLOCK_STEP7(template:<id>|无模板|save_template:<id>)+template:<id>->TB+ES+无模板->CLEAR_project.md.template_id+handoff.md.template_id+ES+save_template:<id>->CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+TB+ES
 WRITE_RULE=STEP7_DRAFT_FEEDBACK->handoff.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
-FMT=STEP7_DRAFT_HEADER:## timestamp|role:editor|type:step_7_feedback|target:writer+STEP7_DRAFT_BODY:instruction:+STEP7_FINAL_HEADER:## timestamp|role:editor|type:step_7_feedback|target:final_writer|mode:revise+STEP7_FINAL_BODY:instruction:
+FMT=STEP7_DRAFT_HEADER:## timestamp|role:editor|type:step_7_feedback|target:writer_or_reviewer+STEP7_DRAFT_BODY:instruction:+STEP7_FINAL_HEADER:## timestamp|role:editor|type:step_7_feedback|target:final_writer|mode:revise+STEP7_FINAL_BODY:instruction:
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
-DFB=WRITE_FEEDBACK_ONLY
+DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)
 FFB=WRITE_FINAL_EDITOR_BLOCK_TO_draft_review_history.md
-DW=SEQ(DFB,SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
-DR=SEQ(DFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
+DW=SEQ(DFB(target=writer),SET(auto,next_actor=writer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
+DR=SEQ(DFB(target=reviewer),SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=))
 FG=SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
 FW=SEQ(FFB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
 FR=SEQ(FFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))

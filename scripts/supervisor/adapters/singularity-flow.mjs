@@ -243,6 +243,37 @@ function latestDraftEditorFeedback(projectDir) {
   );
 }
 
+function latestDraftReviewerFeedbackBlock(projectDir) {
+  return (
+    latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
+      fieldMatches(block.role, "editor") &&
+      fieldMatches(block.type, "step_7_feedback") &&
+      fieldMatches(block.target, "reviewer")
+    ) || null
+  );
+}
+
+function fileMtimeMs(projectDir, relativePath) {
+  try {
+    return fs.statSync(path.join(projectDir, relativePath)).mtimeMs || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function blockTimestampMs(block) {
+  const ts = Date.parse(String(block?.timestamp || "").trim());
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function latestDraftReviewContractFeedback(projectDir) {
+  const reviewerBlock = latestDraftReviewerFeedbackBlock(projectDir);
+  if (reviewerBlock && blockTimestampMs(reviewerBlock) >= fileMtimeMs(projectDir, "output.md")) {
+    return reviewerBlock.raw || "";
+  }
+  return latestDraftEditorFeedback(projectDir) || "";
+}
+
 function extractMarkdownSection(text, heading) {
   const escaped = String(heading || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = String(text || "").match(
@@ -312,7 +343,7 @@ function buildStep7ReviewerMessage(ctx) {
   const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
   const latestEditorFeedback = finalReview
     ? latestFinalEditorFeedback(ctx.projectDir) || "(none)"
-    : latestDraftEditorFeedback(ctx.projectDir) || "(none)";
+    : latestDraftReviewContractFeedback(ctx.projectDir) || "(none)";
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
@@ -565,8 +596,8 @@ export async function tick(ctx) {
             awaiting_user_choice: "yes",
             active_menu_scope: finalArticleReady ? "final_article_menu" : "step_7_menu",
             active_menu_options: finalArticleReady
-              ? "1=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=);4=EXIT_CURRENT_PROJECT"
-              : "1=SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate);2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no,final_article_ready=no,review_target=draft,final_writer_mode=);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=);4=EXIT_CURRENT_PROJECT",
+              ? "1=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise);3=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=);4=EXIT_CURRENT_PROJECT"
+              : "1=SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate);2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no,final_article_ready=no,review_target=draft,final_writer_mode=);3=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=);4=EXIT_CURRENT_PROJECT",
           },
         },
       };
