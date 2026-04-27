@@ -108,10 +108,38 @@ function normalizeFieldValue(value) {
 function normalizeStructuredFieldValue(key, value) {
   const normalized = normalizeFieldValue(value);
   if (!normalized) return "";
+  if (key === "timestamp") return normalized;
   if (["role", "actor", "type", "target", "mode", "review_target"].includes(key)) {
     return normalized.split("+")[0].trim();
   }
   return normalized;
+}
+
+function looksLikeHistoryTimestamp(value) {
+  const text = normalizeFieldValue(value);
+  return /^\d{4}-\d{2}-\d{2}/.test(text) && Number.isFinite(parseHistoryTimestampMs(text));
+}
+
+function parseHistoryTimestampMs(value) {
+  const text = normalizeFieldValue(value);
+  if (!text) return Number.NaN;
+  const candidates = new Set([text]);
+  candidates.add(text.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T"));
+  for (const candidate of [...candidates]) {
+    candidates.add(candidate.replace(/\s+(UTC|GMT)$/i, "Z"));
+    candidates.add(candidate.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+    candidates.add(
+      candidate
+        .replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T")
+        .replace(/\s+(UTC|GMT)$/i, "Z")
+        .replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
+    );
+  }
+  for (const candidate of candidates) {
+    const ts = Date.parse(candidate);
+    if (Number.isFinite(ts)) return ts;
+  }
+  return Number.NaN;
 }
 
 function fieldMatches(value, expected) {
@@ -147,10 +175,11 @@ function parseHistoryBlock(raw) {
       const parts = body.split("|").map((part) => part.trim()).filter(Boolean);
       if (parts.length) {
         const first = parts.shift();
-        if (/^\d{4}-\d{2}-\d{2}T/.test(first) || !/:|=/.test(first)) block.timestamp = normalizeFieldValue(first);
+        if (looksLikeHistoryTimestamp(first) || !/:|=/.test(first)) block.timestamp = normalizeFieldValue(first);
         for (const [key, value] of parts.flatMap(parseHeaderPairs)) {
           const normalized = normalizeStructuredFieldValue(key, value);
-          if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
+          if (key === "timestamp") block.timestamp = normalized;
+          else if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
           else if (key === "type") block.type = normalized;
           else if (key === "target") block.target = normalized;
           else if (key === "mode") block.mode = normalized;
@@ -169,7 +198,8 @@ function parseHistoryBlock(raw) {
     if (pairs.length) {
       for (const [key, value] of pairs) {
         const normalized = normalizeStructuredFieldValue(key, value);
-        if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
+        if (key === "timestamp") block.timestamp = normalized;
+        else if (key === "actor" || key === "role") block.role = normalized.toLowerCase();
         else if (key === "type") block.type = normalized;
         else if (key === "target") block.target = normalized;
         else if (key === "mode") block.mode = normalized;
@@ -235,7 +265,7 @@ function latestReviewerFeedbackRecord(projectDir, reviewTarget) {
 
 function latestDraftEditorFeedback(projectDir) {
   return (
-    latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
       fieldMatches(block.role, "editor") &&
       fieldMatches(block.type, "step_7_feedback") &&
       fieldMatches(block.target, "writer")
@@ -245,7 +275,7 @@ function latestDraftEditorFeedback(projectDir) {
 
 function latestDraftReviewerFeedbackBlock(projectDir) {
   return (
-    latestMatchingHistoryBlock(readProjectText(projectDir, "handoff.md"), (block) =>
+    latestMatchingHistoryBlock(readProjectText(projectDir, "draft_review_history.md"), (block) =>
       fieldMatches(block.role, "editor") &&
       fieldMatches(block.type, "step_7_feedback") &&
       fieldMatches(block.target, "reviewer")
@@ -262,7 +292,7 @@ function fileMtimeMs(projectDir, relativePath) {
 }
 
 function blockTimestampMs(block) {
-  const ts = Date.parse(String(block?.timestamp || "").trim());
+  const ts = parseHistoryTimestampMs(String(block?.timestamp || "").trim());
   return Number.isFinite(ts) ? ts : 0;
 }
 

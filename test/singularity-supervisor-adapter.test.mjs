@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -118,7 +118,7 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
-  test("dispatches writer with latest draft-stage editor feedback block pasted from handoff", async () => {
+  test("dispatches writer with latest writer-target draft feedback block pasted from draft_review_history", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-writer-feedback-"));
     await mkdir(join(projectDir, "runtime"), { recursive: true });
     await writeFile(
@@ -134,12 +134,18 @@ describe("singularity supervisor adapter", () => {
         "### forbidden_expansions",
         "- 不得把安全场景写成文章主线",
         "",
-        "## old-feedback",
-        "role=editor | type=step_7_feedback | target=writer",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-24 09:40:00 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
         "旧意见：轻微顺稿。",
         "",
-        "## latest-feedback",
-        "role=editor | type=step_7_feedback | target=writer",
+        "## 2026-04-24 09:44:00 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
         "继续修改一轮：名著映照段目前偏简略，请做有限增厚。",
         "1) 把《是，大臣》与《官场现形记》的映照从观点并列升级到动作并列。",
         "",
@@ -231,7 +237,7 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
-  test("dispatches reviewer with latest draft-stage editor feedback block pasted from handoff", async () => {
+  test("dispatches reviewer with writer-target draft feedback from draft_review_history when reviewing a rewritten draft", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-feedback-"));
     await writeFile(
       join(projectDir, "handoff.md"),
@@ -243,12 +249,18 @@ describe("singularity supervisor adapter", () => {
         "### forbidden_expansions",
         "- 不得把高风险安全场景扩写成主机制",
         "",
-        "## old-feedback",
-        "role=editor | type=step_7_feedback | target=writer",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-24 09:40:00 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
         "旧意见：轻微顺稿。",
         "",
-        "## latest-feedback",
-        "role=editor | type=step_7_feedback | target=writer",
+        "## 2026-04-24 09:44:00 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
         "先复审再修改：首两段必须明确《2001太空漫游》和《黑镜》的具体场景来源。",
         "黑镜故事段必须补足人物-情节-冲突-映照完整链。",
         "",
@@ -277,6 +289,281 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("智力资产蒸馏导致主动性塌缩与创新下降");
     expect(result.dispatch.message).toContain("boundary material overtakes the Step 6 primary axis");
     expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target draft feedback from draft_review_history when re-review is newer than output", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## step_6_feedback",
+        "### what_it_really_means",
+        "主链保持不变。",
+        "",
+        "## latest-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "旧 writer 合同：继续做结构整改。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 当前草稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-27 14:57:57 UTC|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "执行“较大变更重审”。全文禁用“弱校”这一表达，并输出替换清单与残留项。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 2027,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("Latest editor feedback block for this review target:");
+    expect(result.dispatch.message).toContain("全文禁用“弱校”这一表达");
+    expect(result.dispatch.message).toContain("替换清单与残留项");
+    expect(result.dispatch.message).not.toContain("旧 writer 合同：继续做结构整改。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target draft feedback from timestamp-style draft_review_history blocks", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-ts-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## latest-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "writer 合同：先做结构调整。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 当前草稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "---",
+        "[2026-04-27T14:57:57Z]",
+        "actor: editor",
+        "type: step_7_feedback",
+        "target: reviewer",
+        "instruction:",
+        "按 reviewer 重审口径检查标题是否仍然抽象，并清理“弱校”等词。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 20271,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("按 reviewer 重审口径检查标题是否仍然抽象");
+    expect(result.dispatch.message).not.toContain("writer 合同：先做结构调整。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target draft feedback when timestamp carries UTC offset", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-offset-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## step_6_feedback",
+        "### what_it_really_means",
+        "主链保持不变。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-27T22:57:57+08:00|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
+        "旧 writer 合同：先做结构调整。",
+        "",
+        "## 2026-04-27T23:57:57+08:00|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "offset reviewer 合同：直接按重审意见检查标题和禁词。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 当前草稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2026-04-27T14:59:00Z"), new Date("2026-04-27T14:59:00Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 20273,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("offset reviewer 合同：直接按重审意见检查标题和禁词。");
+    expect(result.dispatch.message).not.toContain("旧 writer 合同：先做结构调整。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target draft feedback when timestamp uses milliseconds and compact offset", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-ms-offset-"));
+    await writeFile(join(projectDir, "handoff.md"), "## step_6_feedback\n### what_it_really_means\n主链保持不变。\n", "utf8");
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-27 22:57:57.123 +0800|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
+        "旧 writer 合同：先做结构调整。",
+        "",
+        "## 2026-04-27 23:57:57.456 +0800|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "毫秒偏移 reviewer 合同：按重审意见检查标题和禁词。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 当前草稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2026-04-27T14:59:00Z"), new Date("2026-04-27T14:59:00Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 20274,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("毫秒偏移 reviewer 合同：按重审意见检查标题和禁词。");
+    expect(result.dispatch.message).not.toContain("旧 writer 合同：先做结构调整。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target draft feedback from markdown-field draft_review_history blocks", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-md-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## latest-feedback",
+        "role=editor | type=step_7_feedback | target=writer",
+        "writer 合同：先把四个场景前置。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 当前草稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "### Round: 2026-04-27 Draft Re-review Feedback",
+        "",
+        "- **timestamp**: 2026-04-27 14:57:57 UTC",
+        "- **role**: editor",
+        "- **type**: step_7_feedback",
+        "- **target**: reviewer",
+        "- **instruction**: 全文禁用“弱校”，并给出替换清单与残留项。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 20272,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("全文禁用“弱校”，并给出替换清单与残留项。");
+    expect(result.dispatch.message).not.toContain("writer 合同：先把四个场景前置。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with writer-target draft feedback when output is newer than reviewer re-review block", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-writer-fallback-"));
+    await writeFile(
+      join(projectDir, "handoff.md"),
+      [
+        "## step_6_feedback",
+        "### what_it_really_means",
+        "主链保持不变。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2030-01-01 00:00:00 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
+        "writer 合同：先把四个场景前置，再改 A/B/C 递进。",
+        "",
+        "## 2026-04-27 14:57:57 UTC|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "旧 reviewer 合同：检查是否还存在“弱校”等词。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 新稿\n\n正文。", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2030-01-01T00:00:00Z"), new Date("2030-01-01T00:00:00Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 2028,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("writer 合同：先把四个场景前置，再改 A/B/C 递进。");
+    expect(result.dispatch.message).not.toContain("旧 reviewer 合同：检查是否还存在“弱校”等词。");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -609,7 +896,7 @@ describe("singularity supervisor adapter", () => {
   test("dispatches writer when draft editor feedback target carries canonical suffix text", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-draft-writer-suffixed-target-"));
     await writeFile(
-      join(projectDir, "handoff.md"),
+      join(projectDir, "draft_review_history.md"),
       [
         "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: writer+instruction:",
         "instruction:",

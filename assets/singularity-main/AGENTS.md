@@ -123,7 +123,7 @@ ROLE_RULE=SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_outp
 TB=BIND_project.md.template_id+handoff.md.template_id
 ES=ENTER_STEP7
 TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_MISSING->ASK_AND_BLOCK_STEP7(template:<id>|无模板|save_template:<id>)+template:<id>->TB+ES+无模板->CLEAR_project.md.template_id+handoff.md.template_id+ES+save_template:<id>->CAPTURE_template_BY_MAIN_AFTER_EDITOR_CONFIRM+TB+ES
-WRITE_RULE=STEP7_DRAFT_FEEDBACK->handoff.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
+WRITE_RULE=STEP7_DRAFT_FEEDBACK->draft_review_history.md_ONLY+STEP7_FINAL_FEEDBACK->draft_review_history.md_ONLY
 FMT=STEP7_DRAFT_WRITER_HEADER:## timestamp|role:editor|type:step_7_feedback|target:writer+STEP7_DRAFT_REVIEWER_HEADER:## timestamp|role:editor|type:step_7_feedback|target:reviewer+STEP7_DRAFT_BODY:instruction:+STEP7_FINAL_HEADER:## timestamp|role:editor|type:step_7_feedback|target:final_writer|mode:revise+STEP7_FINAL_BODY:instruction:
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT+FINAL_WRITER_DONE_POST_FULL_final-output.md
 DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)
