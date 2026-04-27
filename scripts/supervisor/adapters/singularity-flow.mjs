@@ -324,11 +324,21 @@ function blockTimestampMs(block) {
 }
 
 function latestDraftReviewContractFeedback(projectDir) {
+  const writerBlock = latestDraftWriterFeedbackBlock(projectDir);
   const reviewerBlock = latestDraftReviewerFeedbackBlock(projectDir);
+  const reviewerReviewBlock = latestDraftReviewerReviewBlock(projectDir);
+  if (
+    reviewerBlock &&
+    reviewerReviewBlock &&
+    blockTimestampMs(reviewerReviewBlock) >= blockTimestampMs(reviewerBlock) &&
+    blockTimestampMs(reviewerBlock) >= blockTimestampMs(writerBlock)
+  ) {
+    return reviewerBlock.raw || "";
+  }
   if (reviewerBlock && blockTimestampMs(reviewerBlock) >= fileMtimeMs(projectDir, "output.md")) {
     return reviewerBlock.raw || "";
   }
-  return latestDraftEditorFeedback(projectDir) || "";
+  return writerBlock?.raw || reviewerBlock?.raw || "";
 }
 
 function latestDraftWriterContractFeedback(projectDir) {

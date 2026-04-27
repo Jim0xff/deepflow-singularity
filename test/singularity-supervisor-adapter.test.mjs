@@ -463,6 +463,53 @@ describe("singularity supervisor adapter", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
+  test("dispatches reviewer with reviewer-target draft contract after writer rewrites output for a re-review cycle", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-after-writer-"));
+    await writeFile(join(projectDir, "handoff.md"), "## step_6_feedback\n### what_it_really_means\n主链保持不变。\n", "utf8");
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-27 13:26:21 UTC|role:editor|type:step_7_feedback|target:writer",
+        "instruction:",
+        "旧 writer 合同：只补标题，不改正文段落。",
+        "",
+        "## 2026-04-27 13:31:21 UTC|role:editor|type:step_7_feedback|target:reviewer",
+        "instruction:",
+        "新 reviewer 合同：全篇清理机器腔，并给出替换清单。",
+        "",
+        "## 2026-04-27 13:36:39 UTC|role:reviewer|type:editorial_review|target:output.md|review_target:draft|verdict:changes_requested",
+        "verdict=changes_requested",
+        "### MUST_FIX",
+        "1. 全篇清理机器腔。",
+        "2. 给出替换清单。",
+        "",
+        "## 2026-04-27 13:45:20 UTC | role:writer | type:draft_round | target:step_7_drafting",
+        "- changes=output.md 已写入新稿：完成全篇机器腔清理。",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "output.md"), "# 改后稿\n\n正文。\n", "utf8");
+    await utimes(join(projectDir, "output.md"), new Date("2026-04-27T13:45:20Z"), new Date("2026-04-27T13:45:20Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 20275,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("Latest editor feedback block for this review target:");
+    expect(result.dispatch.message).toContain("新 reviewer 合同：全篇清理机器腔，并给出替换清单。");
+    expect(result.dispatch.message).not.toContain("旧 writer 合同：只补标题，不改正文段落。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("dispatches reviewer with reviewer-target draft feedback when timestamp carries UTC offset", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-reviewer-rereview-offset-"));
     await writeFile(
