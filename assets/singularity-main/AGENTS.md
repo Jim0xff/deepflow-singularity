@@ -140,7 +140,7 @@ USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DW)+step_7_menu_3TEXT->SEQ(
 SET_STATUS=step_7_drafting
 STATE=ON_ENTER->SET(current_step=step_7_drafting,workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 AUTO=IF_auto_next_actor_writer_reviewer_final_writer->NO_BOT_UNAVAILABLE
-RETURN=DRAFT_APPROVED->SHOW_step_7_menu
+RETURN=DRAFT_APPROVED->READ_ONLY(status.md|output.md|draft_review_history.md)+IGNORE_SESSION_CONTEXT+ONLY_step_7_menu+NO(ARTICLE|TITLE|final-output|成稿完成)
 FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+final_article_menu+ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
 FORBIDDEN=writer_WITH(review_target=final|final_writer_mode=revise)+final_writer_WITH(review_target=draft)
 [CONTROL]

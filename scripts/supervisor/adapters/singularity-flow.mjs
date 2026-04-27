@@ -30,9 +30,7 @@ const STEP_7_MAIN_MESSAGE = [
   "Project root: {{projectDir}}",
   "Current step: step_7_drafting",
   "Read status.md, output.md, and draft_review_history.md.",
-  "只回复：成稿审核已通过，请确认下一步。",
-  "然后只显示这个菜单：1. 生成正式版文章 2. 继续改稿（带上修改意见，小幅修改） 3. 重新审稿（带上修改意见，较大变更） 4. 退出当前项目。",
-  "Do not summarize the draft or expose raw internal step codes.",
+  "Ignore all prior session context. Use only status.md, output.md, draft_review_history.md from {{projectDir}}. 仅输出5行：第1行=成稿审核已通过，请确认下一步。第2-5行依次=1. 生成正式版文章 / 2. 继续改稿（带上修改意见，小幅修改） / 3. 重新审稿（带上修改意见，较大变更） / 4. 退出当前项目。禁止输出成稿完成、#、标题、正文、final-output.md。",
 ].join("\n");
 
 const STEP_7_FINAL_MAIN_MESSAGE = [
