@@ -62,7 +62,7 @@ OPTIONS=1=PASS_TEMPLATE_GATE_THEN_WRITE_HANDOFF_AND_SET_AUTO_STEP_7_WRITER_ONLY+
 SCOPE=step_7_menu
 OPTIONS=1=FG+2=DW+3=DR+4=EXIT_CURRENT_PROJECT
 [STEP7_FINAL_MENU]
-SCOPE=step_7_final_menu
+SCOPE=final_article_menu
 OPTIONS=1=PUBLISH_PENDING_KEEP_PROJECT+2=FW+3=FR+4=EXIT_CURRENT_PROJECT
 [FINAL]
 SCOPE=final_delivery_menu
@@ -134,14 +134,14 @@ FG=SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=m
 FW=SEQ(FFB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
 FR=SEQ(FFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))
 D=ASSERT_SCOPE(step_7_menu)
-F=ASSERT_SCOPE(step_7_final_menu)
+F=ASSERT_SCOPE(final_article_menu)
 MENU_RULE=2=MINOR_EDIT_TO_WRITER+3=MAJOR_CHANGE_TO_REVIEWER_FIRST
-USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DW)+step_7_menu_3TEXT->SEQ(D,DR)+step_7_final_menu_CHANGE_OR_2TEXT->SEQ(F,FW)+step_7_final_menu_3TEXT->SEQ(F,FR)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
+USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DW)+step_7_menu_3TEXT->SEQ(D,DR)+final_article_menu_CHANGE_FINAL_OR_2TEXT->SEQ(F,FW)+final_article_menu_RE_REVIEW_FINAL_OR_3TEXT->SEQ(F,FR)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS=step_7_drafting
 STATE=ON_ENTER->SET(current_step=step_7_drafting,workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
 AUTO=IF_auto_next_actor_writer_reviewer_final_writer->NO_BOT_UNAVAILABLE
 RETURN=DRAFT_APPROVED->SHOW_step_7_menu
-FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+step_7_final_menu+ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
+FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_final-output.md+final_article_menu+ARTICLE_OK->PUBLISH_final-output.md+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
 FORBIDDEN=writer_WITH(review_target=final|final_writer_mode=revise)+final_writer_WITH(review_target=draft)
 [CONTROL]
 IF_ACTION=上一步->GO_PREVIOUS_STEP+KEEP_RECORDS

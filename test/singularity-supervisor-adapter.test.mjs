@@ -789,7 +789,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("main");
     expect(result.dispatch.message).toContain("final-output.md");
     expect(result.dispatch.afterStatusPatch).toMatchObject({
-      active_menu_scope: "step_7_final_menu",
+      active_menu_scope: "final_article_menu",
       workflow_mode: "manual",
       awaiting_user_choice: "yes",
     });

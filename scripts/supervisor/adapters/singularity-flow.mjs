@@ -42,7 +42,7 @@ const STEP_7_FINAL_MAIN_MESSAGE = [
   "Read status.md, final-output.md, and draft_review_history.md.",
   "开头使用：成稿完成，请确认。",
   "回复必须包含 final-output.md 的正式版全文。",
-  "在全文后只显示这个菜单：1. 确认文章 OK 2. 继续改稿（带上修改意见，小幅修改） 3. 重新审稿（带上修改意见，较大变更） 4. 退出当前项目。",
+  "在全文后只显示这个菜单：1. 确认文章 OK 2. 继续修改正式稿（带上修改意见，小幅修改） 3. 重新审稿正式稿（带上修改意见，较大变更） 4. 退出当前项目。",
   "Do not summarize the article or expose raw internal step codes.",
 ].join("\n");
 
@@ -565,7 +565,7 @@ export async function tick(ctx) {
             current_step: "step_7_drafting",
             next_actor: "main",
             awaiting_user_choice: "yes",
-            active_menu_scope: finalArticleReady ? "step_7_final_menu" : "step_7_menu",
+            active_menu_scope: finalArticleReady ? "final_article_menu" : "step_7_menu",
             active_menu_options: finalArticleReady
               ? "1=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT;2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=);4=EXIT_CURRENT_PROJECT"
               : "1=SET(workflow_mode=auto,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate);2=WRITE_EDITOR_FEEDBACK_AND_SET(workflow_mode=auto,next_actor=writer,awaiting_user_choice=no,final_article_ready=no,review_target=draft,final_writer_mode=);3=SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,final_writer_mode=);4=EXIT_CURRENT_PROJECT",
