@@ -11,6 +11,16 @@ const PROJECTS_ROOT = path.join(DOCS_ROOT, "projects");
 const BINDINGS_FILE = path.join(DOCS_ROOT, "projects.json");
 const PROJECT_AUTH_FILE_NAME = ".docs-auth.json";
 const CANONICAL_PROFILE = "canonical-v1";
+const OPENCLAW_HOME = process.env.OPENCLAW_HOME || path.join(process.env.HOME || "/root", ".openclaw");
+const AGENTS_ROOT = path.join(OPENCLAW_HOME, "agents");
+const SESSION_BACKUPS_ROOT = path.join(OPENCLAW_HOME, "session-backups");
+const SESSION_CLEAR_DELAY_MS = 2_000;
+const SINGULARITY_SESSION_AGENT_IDS = [
+  "singularity-main",
+  "singularity-writer",
+  "singularity-reviewer",
+  "singularity-final-writer",
+];
 
 const CANONICAL_DIRS = [
   "00_meta",
@@ -66,7 +76,7 @@ const ALIASES = new Map([
   ["demo", "05_delivery/current_demo.md"],
 ]);
 
-const USAGE = "usage: node docs-manager-executor.mjs --action <bind|unbind|current|read|write|append|replace|ensure|validate|list|delete|link|locate|handle_notify> --binding-id <bindingId> [--project-code <code>|--path <path-or-alias>|--content <text>|--from <text>|--to <text>|--all|--profile canonical-v1|--force|--account-id <accountId>|--message <text>]";
+const USAGE = "usage: node docs-manager-executor.mjs --action <bind|unbind|current|read|write|append|replace|ensure|validate|list|delete|link|locate|handle_notify|clear_singularity_sessions> --binding-id <bindingId> [--project-code <code>|--path <path-or-alias>|--content <text>|--from <text>|--to <text>|--all|--profile canonical-v1|--force|--account-id <accountId>|--message <text>|--backup-dir <path>|--delay-ms <ms>]";
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -115,6 +125,9 @@ async function main() {
     case "handle_notify":
       await handleNotify(args);
       break;
+    case "clear_singularity_sessions":
+      await clearSingularitySessions(args);
+      break;
     default:
       fail(USAGE);
   }
@@ -134,6 +147,8 @@ function parseArgs(argv) {
     from: "",
     to: undefined,
     replaceAll: false,
+    backupDir: "",
+    delayMs: "",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -174,6 +189,12 @@ function parseArgs(argv) {
         break;
       case "--force":
         parsed.force = true;
+        break;
+      case "--backup-dir":
+        parsed.backupDir = requireValue(token, argv[++i]);
+        break;
+      case "--delay-ms":
+        parsed.delayMs = requireValue(token, argv[++i]);
         break;
       default:
         fail(`unknown argument: ${token}`);
@@ -376,9 +397,132 @@ async function unbindProject(args) {
   if (!projectCode) {
     fail(`project is not bound for ${args.bindingId}`);
   }
+  let backupDir = "";
+  if (shouldResetSingularitySessions(args.bindingId)) {
+    backupDir = await backupSingularitySessions({ bindingId: args.bindingId, projectCode });
+    await scheduleSingularitySessionClear({
+      bindingId: args.bindingId,
+      projectCode,
+      backupDir,
+      delayMs: SESSION_CLEAR_DELAY_MS,
+    });
+  }
   delete bindings[args.bindingId];
   await writeBindings(bindings);
+  if (backupDir) {
+    process.stdout.write(`✅ SESSION_BACKUP ${backupDir}\n`);
+    process.stdout.write(`✅ SESSION_CLEAR scheduled singularity-* after ${SESSION_CLEAR_DELAY_MS}ms\n`);
+  }
   process.stdout.write(`✅ UNBOUND ${args.bindingId} <- ${projectCode}\n`);
+}
+
+function shouldResetSingularitySessions(bindingId) {
+  return /^http:singularity-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(bindingId || ""));
+}
+
+function buildSessionBackupDir(projectCode) {
+  const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  return path.join(SESSION_BACKUPS_ROOT, `singularity-sessions-${projectCode}-${stamp}`);
+}
+
+async function backupSingularitySessions({ bindingId, projectCode }) {
+  const backupDir = buildSessionBackupDir(projectCode);
+  const manifest = {
+    bindingId,
+    projectCode,
+    createdAt: new Date().toISOString(),
+    delayMs: SESSION_CLEAR_DELAY_MS,
+    agents: [],
+  };
+  await fs.mkdir(backupDir, { recursive: true });
+
+  for (const agentId of SINGULARITY_SESSION_AGENT_IDS) {
+    const sessionsDir = path.join(AGENTS_ROOT, agentId, "sessions");
+    try {
+      const stat = await fs.stat(sessionsDir);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const backupAgentDir = path.join(backupDir, agentId);
+    await fs.cp(sessionsDir, backupAgentDir, { recursive: true, force: true });
+    manifest.agents.push({
+      agentId,
+      source: sessionsDir,
+      backup: backupAgentDir,
+    });
+  }
+
+  await writeAtomic(path.join(backupDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  return backupDir;
+}
+
+async function scheduleSingularitySessionClear({ bindingId, projectCode, backupDir, delayMs }) {
+  const child = spawn(
+    process.execPath,
+    [
+      path.resolve(process.argv[1]),
+      "--action",
+      "clear_singularity_sessions",
+      "--binding-id",
+      bindingId,
+      "--project-code",
+      projectCode,
+      "--backup-dir",
+      backupDir,
+      "--delay-ms",
+      String(delayMs),
+    ],
+    {
+      detached: true,
+      stdio: "ignore",
+      env: process.env,
+    },
+  );
+  child.unref();
+}
+
+async function clearSingularitySessions(args) {
+  validateBindingId(args.bindingId);
+  if (args.delayMs) {
+    const ms = Number.parseInt(args.delayMs, 10);
+    if (Number.isFinite(ms) && ms > 0) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+  }
+
+  const clearedAgents = [];
+  for (const agentId of SINGULARITY_SESSION_AGENT_IDS) {
+    const sessionsDir = path.join(AGENTS_ROOT, agentId, "sessions");
+    try {
+      const stat = await fs.stat(sessionsDir);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    await fs.rm(sessionsDir, { recursive: true, force: true });
+    await fs.mkdir(sessionsDir, { recursive: true });
+    clearedAgents.push(agentId);
+  }
+
+  if (args.backupDir) {
+    const resultPath = path.join(args.backupDir, "clear-result.json");
+    await writeAtomic(
+      resultPath,
+      `${JSON.stringify(
+        {
+          bindingId: args.bindingId,
+          projectCode: args.projectCode || "",
+          clearedAt: new Date().toISOString(),
+          clearedAgents,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
+
+  process.stdout.write(`✅ CLEARED ${clearedAgents.join(",")}\n`);
 }
 
 async function showCurrentProject(args) {
