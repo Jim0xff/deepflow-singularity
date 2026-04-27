@@ -31,7 +31,7 @@ const STEP_7_MAIN_MESSAGE = [
   "Current step: step_7_drafting",
   "Read status.md, output.md, and draft_review_history.md.",
   "只回复：成稿审核已通过，请确认下一步。",
-  "然后只显示这个菜单：1. 生成正式版文章 2. 继续修改 3. 重新审稿 4. 退出当前项目。",
+  "然后只显示这个菜单：1. 生成正式版文章 2. 继续改稿（带上修改意见，小幅修改） 3. 重新审稿（带上修改意见，较大变更） 4. 退出当前项目。",
   "Do not summarize the draft or expose raw internal step codes.",
 ].join("\n");
 
@@ -42,7 +42,7 @@ const STEP_7_FINAL_MAIN_MESSAGE = [
   "Read status.md, final-output.md, and draft_review_history.md.",
   "开头使用：成稿完成，请确认。",
   "回复必须包含 final-output.md 的正式版全文。",
-  "在全文后只显示这个菜单：1. 确认文章 OK 2. 继续修改 3. 重新审稿 4. 退出当前项目。",
+  "在全文后只显示这个菜单：1. 确认文章 OK 2. 继续改稿（带上修改意见，小幅修改） 3. 重新审稿（带上修改意见，较大变更） 4. 退出当前项目。",
   "Do not summarize the article or expose raw internal step codes.",
 ].join("\n");
 

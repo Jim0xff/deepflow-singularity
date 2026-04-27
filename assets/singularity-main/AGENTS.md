@@ -135,6 +135,7 @@ FW=SEQ(FFB,SET(auto,next_actor=final_writer,awaiting_user_choice=no,after_final_
 FR=SEQ(FFB,SET(auto,next_actor=reviewer,awaiting_user_choice=no,review_target=final,final_writer_mode=))
 D=ASSERT_SCOPE(step_7_menu)
 F=ASSERT_SCOPE(step_7_final_menu)
+MENU_RULE=2=MINOR_EDIT_TO_WRITER+3=MAJOR_CHANGE_TO_REVIEWER_FIRST
 USER_TRIGGER_RULE=step_7_menu_CHANGE_OR_2TEXT->SEQ(D,DW)+step_7_menu_3TEXT->SEQ(D,DR)+step_7_final_menu_CHANGE_OR_2TEXT->SEQ(F,FW)+step_7_final_menu_3TEXT->SEQ(F,FR)+NO_MAIN_REWRITE+NO_MAIN_DONE_BEFORE_WRITER_RESULT+NO_MAIN_REVIEW_PASS_BEFORE_REVIEWER_RESULT+RE_REVIEW->REVIEWER+NEW_PROJECT->EXIT_CURRENT_PROJECT+END_PROJECT->COMPLETE_CURRENT_PROJECT
 SET_STATUS=step_7_drafting
 STATE=ON_ENTER->SET(current_step=step_7_drafting,workflow_mode=auto,next_actor=writer,awaiting_user_choice=no)
