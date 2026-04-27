@@ -830,10 +830,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               });
             } else if (blockedDispatchFailureReason) {
               const shouldSelfHealStep7WriterNoChange =
-                actor === "writer" &&
-                blockedDispatchFailureReason === "expected_file_not_changed" &&
-                repeated &&
-                String(repeatedDecision.reason || "") === "probe_due";
+                actor === "writer" && blockedDispatchFailureReason === "expected_file_not_changed";
               if (shouldSelfHealStep7WriterNoChange) {
                 applyStatusPatchWithLog({
                   projectDir,
