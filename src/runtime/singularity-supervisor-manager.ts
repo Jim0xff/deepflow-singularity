@@ -249,7 +249,7 @@ function shouldAutoSupervise(status: Record<string, string>): boolean {
   const currentStep = resolveCurrentStep(status);
   const projectStatus = String(status.status || "").trim();
   if (workflowMode !== "auto") return false;
-  if (!["step_5_debate", "step_7_drafting"].includes(currentStep)) return false;
+  if (!["step_5_debate", "step_7_drafting", "step_8_final_article"].includes(currentStep)) return false;
   if (["completed", "exited", "archived"].includes(projectStatus)) return false;
   return true;
 }
@@ -375,9 +375,11 @@ async function publishFinalArticleToDocs({
   const finalOutputPath = join(projectDir, "final-output.md");
   const outputPath = join(projectDir, "output.md");
   const status = parseStatusMd(readStatusSync(statusPath));
+  const currentStep = String(status.current_step || "").trim().toLowerCase();
   const finalArticle = await fs.readFile(finalOutputPath, "utf8").catch(() => "");
   const draftArticle = await fs.readFile(outputPath, "utf8").catch(() => "");
   const finalPublishRequired =
+    currentStep === "step_8_final_article" ||
     String(status.final_article_ready || "").trim().toLowerCase() === "yes" ||
     String(status.review_target || "").trim().toLowerCase() === "final" ||
     String(status.active_menu_scope || "").trim() === "final_delivery_menu";

@@ -13,7 +13,7 @@ This protocol defines the minimal shared state used by:
 All fields live in `/.openclaw/shared/projects/<project_id>/status.md`.
 
 - `workflow_mode: manual | auto`
-- `current_step: step_3_selected | step_4_validation | step_5_debate | step_6_feedback | step_7_drafting | completed | exited`
+- `current_step: step_3_selected | step_4_validation | step_5_debate | step_6_feedback | step_7_drafting | step_8_final_article | completed | exited`
 - `next_actor: main | reviewer | writer | final_writer`
 - `awaiting_user_choice: yes | no`
 - `final_article_ready: yes | no`
@@ -85,9 +85,41 @@ After reviewer finishes review:
   - `next_actor=main`
   - `awaiting_user_choice=no`
 
-After `main` posts the final wrap-up, the workflow may return to `manual` or transition to `completed`.
+After `main` posts the draft approval menu, the workflow returns to `manual`.
 
-After draft approval, `main` may set `next_actor=final_writer`. The final writer reads `output.md`, writes the formal article to `final-output.md`, appends `draft_review_history.md`, and returns to `main` unless `after_final_writer=reviewer`.
+## Step 8 Final Article
+
+Entry by `main` from Step 7 option 1:
+
+- `current_step=step_8_final_article`
+- `workflow_mode=auto`
+- `next_actor=final_writer`
+- `awaiting_user_choice=no`
+- `review_target=final`
+- `final_writer_mode=generate`
+
+After final writer finishes generate or revise:
+
+- `current_step=step_8_final_article`
+- `workflow_mode=auto`
+- `next_actor=main | reviewer`
+- `awaiting_user_choice=no`
+
+After reviewer finishes final review:
+
+- if `verdict=changes_requested`:
+  - `current_step=step_8_final_article`
+  - `workflow_mode=auto`
+  - `next_actor=final_writer`
+  - `awaiting_user_choice=no`
+
+- if `verdict=approved`:
+  - `current_step=step_8_final_article`
+  - `workflow_mode=auto`
+  - `next_actor=main`
+  - `awaiting_user_choice=no`
+
+After `main` posts the final article menu, the workflow returns to `manual` or transitions to publish.
 
 ## Docs Publish
 
@@ -96,7 +128,7 @@ After reviewer approval, if the editor confirms the article is final and accepta
 - `docs_publish_requested=yes`
 - `docs_publish_state=pending`
 
-The runtime manager syncs `final-output.md` into the bound docs-manager project folder at `05_delivery/final_article.md`. Legacy projects without final state may fall back to `output.md`.
+The runtime manager syncs `final-output.md` into the bound docs-manager project folder at `05_delivery/final_article.md`.
 
 - `docs_publish_state=done`
 - `docs_publish_requested=no`

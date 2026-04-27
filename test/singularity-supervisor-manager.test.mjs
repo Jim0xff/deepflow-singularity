@@ -45,7 +45,7 @@ describe("singularity supervisor manager", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test("starts supervisor only for auto step_5/step_7 projects", async () => {
+  test("starts supervisor for auto step_5 projects", async () => {
     const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-manager-"));
     const callsPath = join(root, "calls.log");
     const scriptPath = join(root, "fake-supervisor.mjs");
@@ -77,6 +77,41 @@ describe("singularity supervisor manager", () => {
     const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
     expect(calls).toHaveLength(1);
     expect(calls.some((line) => line.includes(`--project-dir ${step5Dir}`))).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("starts supervisor for auto step_8 final article projects", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-manager-step8-"));
+    const callsPath = join(root, "calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const step8Dir = join(root, "project-step8");
+
+    await mkdir(step8Dir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-step8\n", "utf8");
+    await writeFile(
+      join(step8Dir, "status.md"),
+      "workflow_mode: auto\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: final_writer\nawaiting_user_choice: no\nreview_target: final\nfinal_writer_mode: generate\n",
+      "utf8",
+    );
+
+    await writeFile(
+      scriptPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+    });
+
+    await manager.runNow();
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls.some((line) => line.includes(`--project-dir ${step8Dir}`))).toBe(true);
 
     await rm(root, { recursive: true, force: true });
   });
@@ -126,10 +161,10 @@ describe("singularity supervisor manager", () => {
     await writeFile(join(root, "CURRENT_PROJECT"), "project-publish\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-article\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "project_id: demo-article\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: main\nfinal_article_ready: yes\nreview_target: final\nactive_menu_scope: final_delivery_menu\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
       "utf8",
     );
-    await writeFile(join(projectDir, "output.md"), "final article body", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "final article body", "utf8");
     await writeFile(scriptPath, "", "utf8");
     await writeFile(
       docsManagerPath,
@@ -169,7 +204,7 @@ describe("singularity supervisor manager", () => {
     await writeFile(join(root, "CURRENT_PROJECT"), "project-final-output\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-final-output\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "project_id: demo-final-output\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: main\nfinal_article_ready: yes\nreview_target: final\nactive_menu_scope: final_delivery_menu\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
       "utf8",
     );
     await writeFile(join(projectDir, "output.md"), "draft article body", "utf8");
@@ -209,7 +244,7 @@ describe("singularity supervisor manager", () => {
     await writeFile(join(root, "CURRENT_PROJECT"), "project-require-final\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-require-final\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\nfinal_article_ready: yes\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "project_id: demo-require-final\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: main\nfinal_article_ready: yes\nreview_target: final\nactive_menu_scope: final_delivery_menu\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
       "utf8",
     );
     await writeFile(join(projectDir, "output.md"), "draft article body", "utf8");
@@ -253,10 +288,10 @@ describe("singularity supervisor manager", () => {
     await writeFile(join(root, "active", "telegram:-10001.current"), "demo-notify\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-notify\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "project_id: demo-notify\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: main\nfinal_article_ready: yes\nreview_target: final\nactive_menu_scope: final_delivery_menu\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
       "utf8",
     );
-    await writeFile(join(projectDir, "output.md"), "notify final article", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "notify final article", "utf8");
     await writeFile(scriptPath, "", "utf8");
     await writeFile(
       docsManagerPath,
@@ -349,10 +384,10 @@ describe("singularity supervisor manager", () => {
     await writeFile(join(root, "CURRENT_PROJECT"), "project-repair\n", "utf8");
     await writeFile(
       join(projectDir, "status.md"),
-      "project_id: demo-repair\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_7_drafting\nnext_actor: main\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
+      "project_id: demo-repair\nworkflow_mode: manual\nstatus: active\ncurrent_step: step_8_final_article\nnext_actor: main\nfinal_article_ready: yes\nreview_target: final\nactive_menu_scope: final_delivery_menu\ndocs_binding_state: bound\ndocs_publish_requested: yes\ndocs_publish_state: pending\n",
       "utf8",
     );
-    await writeFile(join(projectDir, "output.md"), "repaired final article", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "repaired final article", "utf8");
     await writeFile(scriptPath, "", "utf8");
     await writeFile(
       docsManagerPath,
@@ -558,6 +593,9 @@ if (args.includes("--action write")) {
         "project_id: demo-completed-pending",
         "status: completed",
         "current_step: completed",
+        "final_article_ready: yes",
+        "review_target: final",
+        "active_menu_scope: final_delivery_menu",
         "docs_binding_state: bound",
         "docs_publish_binding_id: http:singularity-demo-completed-pending",
         "docs_publish_requested: yes",
@@ -566,7 +604,7 @@ if (args.includes("--action write")) {
       ].join("\n"),
       "utf8",
     );
-    await writeFile(join(projectDir, "output.md"), "completed final article", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "completed final article", "utf8");
     await writeFile(scriptPath, "", "utf8");
     await writeFile(
       docsManagerPath,
@@ -611,7 +649,10 @@ if (args.includes("--action write")) {
       [
         "project_id: demo-pending",
         "status: active",
-        "current_step: step_7_drafting",
+        "current_step: step_8_final_article",
+        "final_article_ready: yes",
+        "review_target: final",
+        "active_menu_scope: final_delivery_menu",
         "docs_binding_state: bound",
         "docs_publish_binding_id: http:singularity-demo-pending",
         "docs_publish_requested: yes",
@@ -620,7 +661,7 @@ if (args.includes("--action write")) {
       ].join("\n"),
       "utf8",
     );
-    await writeFile(join(projectDir, "output.md"), "pending final article", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "pending final article", "utf8");
     await writeFile(scriptPath, "", "utf8");
     await writeFile(
       docsManagerPath,

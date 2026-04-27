@@ -589,7 +589,12 @@ describe("singularity supervisor adapter", () => {
     });
     expect(result.dispatch.message).toContain("4. 退出当前项目");
     expect(result.dispatch.message).toContain("1. 生成正式版文章");
-    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("1=SET(workflow_mode=auto,next_actor=final_writer");
+    expect(result.dispatch.message).toContain("当前仍处于草稿写作步骤，不是正式版步骤");
+    expect(result.dispatch.message).toContain("选项2只能表示继续修改草稿并交给 writer");
+    expect(result.dispatch.message).toContain("选项3只能表示重新审稿并交给 reviewer");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain(
+      "1=SET(workflow_mode=auto,current_step=step_8_final_article,next_actor=final_writer"
+    );
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("final_writer_mode=generate");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("4=EXIT_CURRENT_PROJECT");
   });
@@ -623,14 +628,14 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 106,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
       },
     });
 
     expect(result.dispatch.actor).toBe("final_writer");
-    expect(result.dispatch.key).toBe("step7:106:final_writer:main");
+    expect(result.dispatch.key).toBe("step8:106:final_writer:main");
     expect(result.dispatch.message).toContain("Use output.md as the only article base");
     expect(result.dispatch.message).toContain("FULL_REWRITE_REQUIRED");
     expect(result.dispatch.message).toContain("Rewrite the whole article into a publication-grade final article");
@@ -643,10 +648,11 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
       workflow_mode: "auto",
-      current_step: "step_7_drafting",
+      current_step: "step_8_final_article",
       next_actor: "main",
       awaiting_user_choice: "no",
       final_article_ready: "yes",
+      review_target: "final",
       final_writer_mode: "",
     });
   });
@@ -662,7 +668,7 @@ describe("singularity supervisor adapter", () => {
         "草稿阶段旧意见",
         "",
         "## final-feedback",
-        "role=editor | type=step_7_feedback | target=final_writer",
+        "role=editor | type=step_8_feedback | target=final_writer",
         "### instruction",
         "主编反馈：中文。",
         "",
@@ -682,7 +688,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 1061,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -708,7 +714,7 @@ describe("singularity supervisor adapter", () => {
         "## final-feedback",
         "- **id**: F_final_2026-04-17-01",
         "- **role**: editor",
-        "- **type**: step_7_feedback",
+        "- **type**: step_8_feedback",
         "- **target**: final_writer",
         "- **instruction**: 将当前英文终稿完整转为中文版本。",
         "",
@@ -729,7 +735,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10615,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -761,7 +767,7 @@ describe("singularity supervisor adapter", () => {
         "",
         "- **id**: `F_final_2026-04-17-01`",
         "- **role**: `editor`",
-        "- **type**: `step_7_feedback`",
+        "- **type**: `step_8_feedback`",
         "- **target**: `final_writer`",
         "- **instruction**: 将当前英文终稿完整转为中文版本。",
         "",
@@ -782,7 +788,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10616,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -813,7 +819,7 @@ describe("singularity supervisor adapter", () => {
         "---",
         "[2026-04-22T13:34:00Z]",
         "actor: editor",
-        "type: step_7_feedback",
+        "type: step_8_feedback",
         "target: final_writer",
         "mode: revise",
         "instruction:",
@@ -838,7 +844,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10618,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -858,7 +864,7 @@ describe("singularity supervisor adapter", () => {
     await writeFile(
       join(projectDir, "draft_review_history.md"),
       [
-        "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: final_writer | mode: revise",
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_8_feedback | target: final_writer | mode: revise",
         "instruction:",
         "1) 两处表述补上明确时间并自然融入正文",
         "2) 笔记体起手改成专栏叙述过渡",
@@ -878,7 +884,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10618,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -928,7 +934,7 @@ describe("singularity supervisor adapter", () => {
     await writeFile(
       join(projectDir, "draft_review_history.md"),
       [
-        "## 2026-04-22T13:34:00Z | role: editor | type: step_7_feedback | target: final_writer | mode: revise",
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_8_feedback | target: final_writer | mode: revise",
         "instruction:",
         "修正式稿",
         "",
@@ -947,7 +953,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10620,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -967,7 +973,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 10617,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "generate",
@@ -1005,7 +1011,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 1062,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "main",
         final_writer_mode: "revise",
@@ -1014,7 +1020,7 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch).toBeUndefined();
     expect(result.runtimePatch).toMatchObject({
-      last_decision: "step7_final_writer_wait_editor_feedback",
+      last_decision: "step8_final_writer_wait_editor_feedback",
       last_error: "final_editor_feedback_missing",
     });
 
@@ -1042,19 +1048,21 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 107,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "final_writer",
         after_final_writer: "reviewer",
         final_writer_mode: "revise",
       },
     });
 
-    expect(result.dispatch.key).toBe("step7:107:final_writer:reviewer");
+    expect(result.dispatch.key).toBe("step8:107:final_writer:reviewer");
     expect(result.dispatch.message).toContain("补一条正式稿意见");
     expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:\n(none)");
     expect(result.dispatch.afterSuccessPatch).toMatchObject({
+      current_step: "step_8_final_article",
       next_actor: "reviewer",
       final_article_ready: "no",
+      review_target: "final",
       final_writer_mode: "",
     });
 
@@ -1067,15 +1075,18 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 108,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "main",
         final_article_ready: "yes",
       },
     });
 
     expect(result.dispatch.actor).toBe("main");
+    expect(result.dispatch.key).toBe("step8:108:main:final");
     expect(result.dispatch.message).toContain("final-output.md");
+    expect(result.dispatch.message).toContain("Current step: step_8_final_article");
     expect(result.dispatch.afterStatusPatch).toMatchObject({
+      current_step: "step_8_final_article",
       active_menu_scope: "final_article_menu",
       workflow_mode: "manual",
       awaiting_user_choice: "yes",
@@ -1091,7 +1102,7 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 109,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "reviewer",
         review_target: "final",
       },
@@ -1110,13 +1121,15 @@ describe("singularity supervisor adapter", () => {
       statusMtimeMs: 110,
       status: {
         workflow_mode: "auto",
-        current_step: "step_7_drafting",
+        current_step: "step_8_final_article",
         next_actor: "reviewer",
         review_target: "final",
       },
     });
 
     expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.key).toBe("step8:110:reviewer");
+    expect(result.dispatch.message).toContain("Current step: step_8_final_article");
     expect(result.dispatch.message).toContain("review final-output.md");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/review_gates/");
     expect(result.dispatch.message).toContain("/.openclaw/shared/knowledge/repair_patterns/");
@@ -1126,6 +1139,81 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("type=review_knowledge_read");
     expect(result.dispatch.message).toContain("apply_points_or_none=...");
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with reviewer-target final feedback when final re-review is newer than final-output", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-rereview-reviewer-target-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-04-22T13:34:00Z | role: editor | type: step_8_feedback | target: final_writer | mode: revise",
+        "instruction:",
+        "旧 final_writer 合同：改正式稿节奏。",
+        "",
+        "## 2026-04-22T14:34:00Z | role: editor | type: step_8_feedback | target: reviewer | review_target: final",
+        "instruction:",
+        "按终稿重审口径，逐段核查标题是否过泛，并列出残留抽象表达。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "final-output.md"), "formal article", "utf8");
+    await utimes(join(projectDir, "final-output.md"), new Date("2026-04-22T14:00:00Z"), new Date("2026-04-22T14:00:00Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1101,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_8_final_article",
+        next_actor: "reviewer",
+        review_target: "final",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("按终稿重审口径，逐段核查标题是否过泛");
+    expect(result.dispatch.message).toContain("列出残留抽象表达");
+    expect(result.dispatch.message).not.toContain("旧 final_writer 合同：改正式稿节奏。");
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("dispatches reviewer with final-writer feedback when final-output is newer than reviewer-target final re-review feedback", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-final-rereview-writer-fallback-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2030-01-01 00:00:00 UTC|role:editor|type:step_8_feedback|target:final_writer|mode:revise",
+        "instruction:",
+        "final_writer 合同：统一正式版标题、导语和结尾收束。",
+        "",
+        "## 2026-04-27 14:57:57 UTC|role:editor|type:step_8_feedback|target:reviewer|review_target:final",
+        "instruction:",
+        "旧 reviewer 合同：检查是否仍有抽象标题。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(join(projectDir, "final-output.md"), "formal article", "utf8");
+    await utimes(join(projectDir, "final-output.md"), new Date("2030-01-01T00:00:00Z"), new Date("2030-01-01T00:00:00Z"));
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1102,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_8_final_article",
+        next_actor: "reviewer",
+        review_target: "final",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).toContain("final_writer 合同：统一正式版标题、导语和结尾收束。");
+    expect(result.dispatch.message).not.toContain("旧 reviewer 合同：检查是否仍有抽象标题。");
 
     await rm(projectDir, { recursive: true, force: true });
   });

@@ -258,7 +258,9 @@ function step7MenuRecoveryPatch(status = {}, nowIso = new Date().toISOString()) 
     next_actor: "main",
     awaiting_user_choice: "yes",
     active_menu_scope: "step_7_menu",
-    review_target: String(status.review_target || "").trim().toLowerCase() === "final" ? "final" : "draft",
+    review_target: "draft",
+    after_final_writer: "",
+    final_article_ready: "no",
     final_writer_mode: "",
     updated_at: nowIso,
   };
@@ -507,17 +509,18 @@ function verdictPatch(verdict, status = {}) {
   if (verdict === "approved") {
     return {
       workflow_mode: "auto",
-      current_step: "step_7_drafting",
+      current_step: isFinalReview ? "step_8_final_article" : "step_7_drafting",
       next_actor: "main",
       awaiting_user_choice: "no",
       final_article_ready: isFinalReview ? "yes" : "no",
+      review_target: isFinalReview ? "final" : "draft",
       final_writer_mode: "",
       after_final_writer: "",
     };
   }
   return {
     workflow_mode: "auto",
-    current_step: "step_7_drafting",
+    current_step: isFinalReview ? "step_8_final_article" : "step_7_drafting",
     next_actor: isFinalReview ? "final_writer" : "writer",
     awaiting_user_choice: "no",
     final_article_ready: "no",

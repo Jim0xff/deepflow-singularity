@@ -15,4 +15,7 @@ flowchart LR
 
     I -->|approved| K["status.md\nnext_actor=main"]
     K --> L["adapter dispatches main"]
-    L --> M["main posts wrap-up / next menu"]
+    L --> M["main posts draft approval menu"]
+    M --> N["option 1 -> status.md\ncurrent_step=step_8_final_article\nnext_actor=final_writer"]
+    N --> O["final_writer writes final-output.md"]
+    O --> P["main posts final article menu / publish menu"]

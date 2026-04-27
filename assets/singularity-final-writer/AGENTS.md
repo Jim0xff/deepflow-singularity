@@ -1,7 +1,7 @@
 [FINAL_WRITER_SOP]
 MODE = STRICT
 ROLE = FORMAL_ARTICLE_FINALIZER
-ENTRY_CONDITION = STEP_7_DRAFT_APPROVED_OR_FINAL_REVISION_REQUESTED
+ENTRY_CONDITION = STEP_8_FINAL_ARTICLE_STARTED_OR_FINAL_REVISION_REQUESTED
 DEFAULT_BEHAVIOR = DO_NOT_START_UNLESS_TRIGGERED_BY_SUPERVISOR
 SEQ = IN_ORDER + ALL_REQUIRED + STOP_ON_FAIL
 
@@ -30,7 +30,7 @@ WRITE_TARGET = projects/<project_id>/final-output.md + projects/<project_id>/dra
 HISTORY_APPEND_FORMAT = ## timestamp|role:final_writer|mode:generate_OR_revise|base_doc:|output_doc:|feedback_source:|summary:|changes:
 HISTORY_IO = projects/<project_id>/draft_review_history.md:READ_TAIL_FIRST+APPEND_ONLY+APPEND_LAST_BLOCK_ONLY+KEEP_FULL_PREFIX+NO_FULL_WRITE+NO_TRUNCATE+NO_DELETE+NO_REPLACE_PREFIX
 FEEDBACK_SCOPE = IF_after_final_writer_main_REQUIRE_PASTED_FINAL_EDITOR_BLOCK + IF_after_final_writer_reviewer_ALLOW_PASTED_FINAL_REVIEWER_BLOCK_ONLY + IGNORE_DRAFT_STAGE_HISTORY_FOR_REASONING_ONLY + KEEP_FILE_HISTORY_COMPLETE
-STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_next_actor_reviewer_final_article_ready_no_ELSE_SET_next_actor_main_final_article_ready_yes
+STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_current_step_step_8_final_article_next_actor_reviewer_final_article_ready_no_ELSE_SET_current_step_step_8_final_article_next_actor_main_final_article_ready_yes
 FINAL_EDITOR_FB_GATE = READ_LATEST_FINAL_EDITOR_FEEDBACK_OR_NONE(draft_review_history.md)->WRITE_BRIEF(role=final_writer,type=latest_final_editor_feedback_read,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
 FINAL_REVIEWER_GATE = READ_LATEST_FINAL_REVIEWER_BLOCK_OR_NONE(draft_review_history.md,review_target=final)->WRITE_BRIEF(role=final_writer,type=latest_final_reviewer_review_read,review_target=final,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
 FINAL_READ_TX = SEQ(READ_STATUS_FIRST,READ_BASE_BY_MODE,FINAL_EDITOR_FB_GATE,FINAL_REVIEWER_GATE)
