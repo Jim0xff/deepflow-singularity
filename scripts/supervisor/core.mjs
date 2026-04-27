@@ -264,6 +264,184 @@ function step7MenuRecoveryPatch(status = {}, nowIso = new Date().toISOString()) 
   };
 }
 
+async function dispatchSelfHealStep7Menu({
+  projectDir,
+  statusPath,
+  status,
+  statusMtimeMs,
+  adapter,
+  args,
+  runtime,
+  nextRuntime,
+  dispatchedAtIso,
+}) {
+  const agents = buildAgentRuntime(args);
+  const syntheticStatus = {
+    ...status,
+    workflow_mode: "auto",
+    current_step: "step_7_drafting",
+    next_actor: "main",
+    awaiting_user_choice: "no",
+  };
+  const statusText = readText(statusPath);
+  const result = await adapter.tick({
+    projectDir,
+    projectRoot: projectDir,
+    runtimeDir: path.join(projectDir, "runtime"),
+    statusPath,
+    statusText,
+    status: syntheticStatus,
+    statusMtimeMs,
+    runtime,
+    agents,
+    updateStatus: (patch) => updateStatusMdAtomic(statusPath, patch),
+  });
+  if (!result?.dispatch || result.dispatch.actor !== "main") {
+    return { ok: false, reason: "self_heal_menu_dispatch_missing", sent: 0, failed: 1 };
+  }
+
+  const dispatch = {
+    ...result.dispatch,
+    message: [
+      "开头先回复：本轮改稿未产生新的正文版本，系统已返回 Step7 菜单。",
+      result.dispatch.message,
+    ].join("\n"),
+  };
+  const agent = agents.main;
+  const delivery = {
+    ...resolveTelegramDelivery(projectDir),
+    account: agent?.agentId || "singularity-main",
+  };
+  const dispatchSessionId = dispatch.sessionId || agent?.sessionId || "";
+  appendDispatchHistory(projectDir, {
+    event: "dispatch_prompt",
+    dispatch_key: dispatch.key,
+    actor: "main",
+    agent_id: agent?.agentId || "",
+    session_id: dispatchSessionId,
+    status: summarizeStatus(status),
+    runtime: summarizeRuntime(runtime),
+    dispatch: summarizeDispatch(dispatch),
+    message: String(dispatch.message || ""),
+  });
+  const run = runOpenClawAgent({
+    agentId: agent?.agentId || "singularity-main",
+    message: dispatch.message,
+    sessionId: dispatchSessionId,
+    openclawNode: OPENCLAW_NODE,
+    openclawCli: OPENCLAW_CLI,
+  });
+  appendDispatchHistory(projectDir, {
+    event: "dispatch_result",
+    dispatch_key: dispatch.key,
+    actor: "main",
+    exit_code: run.status ?? 1,
+    no_reply: hasNoReplySignal(run),
+    transient_failure: hasTransientDispatchFailureSignal(run),
+    success_files_changed: false,
+    parsed_verdict: "",
+    stdout: String(run.stdout || ""),
+    stderr: String(run.stderr || ""),
+  });
+  if ((run.status ?? 1) !== 0) {
+    return { ok: false, reason: "self_heal_menu_dispatch_failed", sent: 0, failed: 1 };
+  }
+
+  const deliveryResult = dispatch.suppressDelivery
+    ? { ok: true, sent: 0, failed: 0 }
+    : deliverAgentPayloads({
+        delivery,
+        actor: "main",
+        run,
+        dispatch: { ...dispatch, projectDir },
+        nextRuntime,
+      });
+  if (!deliveryResult.ok) {
+    return {
+      ok: false,
+      reason: "delivery_failed",
+      sent: Number(deliveryResult.sent || 0),
+      failed: Number(deliveryResult.failed || 0),
+    };
+  }
+  if (dispatch.afterStatusPatch) {
+    applyStatusPatchWithLog({
+      projectDir,
+      statusPath,
+      source: "self_heal_after_status_patch",
+      patch: {
+        ...dispatch.afterStatusPatch,
+        updated_at: dispatchedAtIso,
+      },
+      details: {
+        actor: "main",
+        dispatch_key: dispatch.key,
+      },
+    });
+  }
+  nextRuntime.last_dispatch_key = dispatch.key;
+  nextRuntime.last_dispatch_actor = "main";
+  nextRuntime.last_dispatch_status_mtime_ms = statusMtimeMs;
+  nextRuntime.last_dispatch_at = dispatchedAtIso;
+  nextRuntime.last_dispatch_message = dispatch.message;
+  nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
+  nextRuntime.last_dispatch_stderr = String(run.stderr || "").trim();
+  nextRuntime.last_dispatch_exit_code = run.status ?? 1;
+  return {
+    ok: true,
+    reason: "",
+    sent: Number(deliveryResult.sent || 0),
+    failed: Number(deliveryResult.failed || 0),
+    record: {
+      actor: "main",
+      dispatchKey: dispatch.key,
+      message: dispatch.message,
+      stdout: String(run.stdout || "").trim(),
+      stderr: String(run.stderr || "").trim(),
+      exitCode: run.status ?? 1,
+    },
+  };
+}
+
+function sendStep7NoChangeNotice(projectDir, nextRuntime) {
+  const delivery = resolveTelegramDelivery(projectDir);
+  if (!delivery?.enabled) return { ok: false, reason: "delivery_disabled", sent: 0, failed: 0 };
+  const message = [
+    "本轮改稿未产生新的正文版本，系统已返回 Step7 菜单。",
+    "",
+    "1. 生成正式版文章",
+    "2. 继续改稿（带上修改意见，小幅修改）",
+    "3. 重新审稿（带上修改意见，较大变更）",
+    "4. 退出当前项目。",
+  ].join("\n");
+  const chunks = chunkMessageText(message);
+  let sent = 0;
+  let failed = 0;
+  const errors = [];
+  for (const chunk of chunks) {
+    const result = sendOpenClawMessage({
+      account: "singularity-main",
+      channel: delivery.channel,
+      target: delivery.to,
+      message: chunk,
+      openclawNode: OPENCLAW_NODE,
+      openclawCli: OPENCLAW_CLI,
+    });
+    if ((result.status ?? 1) === 0) sent += 1;
+    else {
+      failed += 1;
+      errors.push(String(result.stderr || result.stdout || "").trim());
+    }
+  }
+  if (nextRuntime && typeof nextRuntime === "object") {
+    nextRuntime.last_delivery_count = sent;
+    nextRuntime.last_delivery_failed_count = failed;
+    nextRuntime.last_delivery_at = sent > 0 ? new Date().toISOString() : "";
+    nextRuntime.last_delivery_error = failed > 0 ? errors.filter(Boolean).join("\n") : "";
+  }
+  return { ok: failed === 0, reason: failed === 0 ? "" : "delivery_failed", sent, failed };
+}
+
 async function loadAdapter(adapterPath) {
   const resolved = path.isAbsolute(adapterPath) ? adapterPath : path.resolve(__dirname, adapterPath);
   const module = await import(pathToFileURL(resolved).href);
@@ -320,35 +498,6 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
   nextRuntime.last_delivery_at = sent.length ? new Date().toISOString() : "";
   nextRuntime.last_delivery_error = failed.length ? failed.map((item) => item.stderr || item.stdout).join("\n") : "";
   return { ok: failed.length === 0, sent: sent.length, failed: failed.length };
-}
-
-function sendStep7NoChangeNotice(projectDir) {
-  const delivery = resolveTelegramDelivery(projectDir);
-  if (!delivery?.enabled) return { ok: false, reason: "delivery_disabled", sent: 0, failed: 0 };
-  const message = [
-    "本轮改稿未产生新的正文版本，系统已返回 Step7 菜单。",
-    "",
-    "1. 生成正式版文章",
-    "2. 继续改稿（带上修改意见，小幅修改）",
-    "3. 重新审稿（带上修改意见，较大变更）",
-    "4. 退出当前项目。",
-  ].join("\n");
-  const chunks = chunkMessageText(message);
-  let sent = 0;
-  let failed = 0;
-  for (const chunk of chunks) {
-    const result = sendOpenClawMessage({
-      account: "singularity-main",
-      channel: delivery.channel,
-      target: delivery.to,
-      message: chunk,
-      openclawNode: OPENCLAW_NODE,
-      openclawCli: OPENCLAW_CLI,
-    });
-    if ((result.status ?? 1) === 0) sent += 1;
-    else failed += 1;
-  }
-  return { ok: failed === 0, reason: failed === 0 ? "" : "delivery_failed", sent, failed };
 }
 
 function verdictPatch(verdict, status = {}) {
@@ -467,6 +616,14 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
         if (!repeated || repeatedDecision.shouldDispatch) {
           const actor = result.dispatch.actor;
           const agent = agentRuntime[actor];
+          let dispatchRecord = {
+            actor,
+            dispatchKey,
+            message: result.dispatch.message,
+            stdout: "",
+            stderr: "",
+            exitCode: 1,
+          };
           const dispatchStartedAt = new Date();
           const dispatchStartedAtIso = dispatchStartedAt.toISOString();
           const { paths: resumeSignalPaths, snapshot: resumeSignals } = snapshotDispatchResumeSignals(
@@ -552,6 +709,14 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
             dispatched = run.status === 0;
             const noReply = hasNoReplySignal(run);
             const transientDispatchFailure = hasTransientDispatchFailureSignal(run);
+            dispatchRecord = {
+              actor,
+              dispatchKey,
+              message: result.dispatch.message,
+              stdout: String(run.stdout || "").trim(),
+              stderr: String(run.stderr || "").trim(),
+              exitCode: run.status ?? 1,
+            };
             const successFilesChanged = hasChangedRelativeFile(projectDir, successFileSnapshot);
             const parsedVerdict = result.dispatch.afterSuccessPatchFromLatestVerdict
               ? parseLatestVerdict(readText(path.join(projectDir, "draft_review_history.md")))
@@ -861,20 +1026,96 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               const shouldSelfHealStep7WriterNoChange =
                 actor === "writer" && blockedDispatchFailureReason === "expected_file_not_changed";
               if (shouldSelfHealStep7WriterNoChange) {
-                applyStatusPatchWithLog({
+                let selfHealNotice = await dispatchSelfHealStep7Menu({
                   projectDir,
                   statusPath,
-                  source: "blocked_no_change_step7_writer_recovery",
-                  patch: step7MenuRecoveryPatch(status, dispatchStartedAtIso),
-                  details: {
+                  status,
+                  statusMtimeMs,
+                  adapter,
+                  args,
+                  runtime: nextRuntime,
+                  nextRuntime,
+                  dispatchedAtIso: dispatchStartedAtIso,
+                });
+                if (!selfHealNotice.ok) {
+                  const fallbackReason = selfHealNotice.reason;
+                  const fallbackNotice = sendStep7NoChangeNotice(projectDir, nextRuntime);
+                  if (fallbackNotice.ok) {
+                    applyStatusPatchWithLog({
+                      projectDir,
+                      statusPath,
+                      source: "blocked_no_change_step7_writer_recovery",
+                      patch: step7MenuRecoveryPatch(status, dispatchStartedAtIso),
+                      details: {
+                        actor,
+                        dispatch_key: dispatchKey,
+                        error: blockedDispatchFailureReason,
+                        fallback_reason: fallbackReason,
+                      },
+                    });
+                    selfHealNotice = fallbackNotice;
+                  } else {
+                    selfHealNotice = fallbackNotice;
+                  }
+                }
+                if (selfHealNotice.ok) {
+                  if (selfHealNotice.record) {
+                    dispatchRecord = selfHealNotice.record;
+                  }
+                  clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
+                  nextRuntime.last_recovery_action = "step7_writer_no_change_returned_to_menu";
+                  logWatchEvent(projectDir, "dispatch_self_healed_to_step7_menu", {
                     actor,
                     dispatch_key: dispatchKey,
                     error: blockedDispatchFailureReason,
-                  },
-                });
-                clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
-                nextRuntime.last_recovery_action = "step7_writer_no_change_returned_to_menu";
-                const selfHealNotice = sendStep7NoChangeNotice(projectDir);
+                    runtime_after: summarizeRuntime(nextRuntime),
+                  });
+                } else {
+                  nextRuntime.last_dispatch_failed_at = dispatchStartedAtIso;
+                  nextRuntime.last_error = selfHealNotice.reason || "delivery_failed";
+                  nextRuntime.last_no_reply_signal = "no";
+                  nextRuntime.last_transient_failure_signal = hasTransientDeliveryFailureSignal(
+                    nextRuntime.last_delivery_error,
+                  )
+                    ? "yes"
+                    : "no";
+                  if (nextRuntime.last_transient_failure_signal === "yes") {
+                    applyRecoverableDispatchFailure({
+                      runtimePatch: nextRuntime,
+                      failureCounts,
+                      dispatchKey,
+                      previousFailureCount,
+                      recoverySession,
+                      statusMtimeMs,
+                      nowIso: dispatchStartedAtIso,
+                      reason: String(nextRuntime.last_error || "delivery_failed"),
+                      resumeSignals,
+                      resumeSignalPaths,
+                    });
+                    logWatchEvent(projectDir, "dispatch_recoverable_failure", {
+                      actor,
+                      dispatch_key: dispatchKey,
+                      error: String(nextRuntime.last_error || "delivery_failed"),
+                      runtime_after: summarizeRuntime(nextRuntime),
+                    });
+                  } else {
+                    applyNonRecoverableDispatchFailure({
+                      runtimePatch: nextRuntime,
+                      dispatchKey,
+                      statusMtimeMs,
+                      reason: String(nextRuntime.last_error || "delivery_failed"),
+                      nowIso: dispatchStartedAtIso,
+                      resumeSignals,
+                      resumeSignalPaths,
+                    });
+                    logWatchEvent(projectDir, "dispatch_blocked_failure", {
+                      actor,
+                      dispatch_key: dispatchKey,
+                      error: String(nextRuntime.last_error || "delivery_failed"),
+                      runtime_after: summarizeRuntime(nextRuntime),
+                    });
+                  }
+                }
                 logWatchEvent(projectDir, "dispatch_self_heal_notice_result", {
                   actor: "main",
                   dispatch_key: dispatchKey,
@@ -882,12 +1123,6 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                   failed: selfHealNotice.failed,
                   ok: selfHealNotice.ok,
                   reason: selfHealNotice.reason,
-                });
-                logWatchEvent(projectDir, "dispatch_self_healed_to_step7_menu", {
-                  actor,
-                  dispatch_key: dispatchKey,
-                  error: blockedDispatchFailureReason,
-                  runtime_after: summarizeRuntime(nextRuntime),
                 });
               } else {
                 applyNonRecoverableDispatchFailure({
@@ -907,13 +1142,13 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 });
               }
             }
-            nextRuntime.last_dispatch_message = result.dispatch.message;
-            nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
-            nextRuntime.last_dispatch_stderr = String(run.stderr || "").trim();
-            nextRuntime.last_dispatch_exit_code = run.status ?? 1;
+            nextRuntime.last_dispatch_message = dispatchRecord.message;
+            nextRuntime.last_dispatch_stdout = dispatchRecord.stdout;
+            nextRuntime.last_dispatch_stderr = dispatchRecord.stderr;
+            nextRuntime.last_dispatch_exit_code = dispatchRecord.exitCode;
             logWatchEvent(projectDir, "dispatch_recorded", {
-              actor,
-              dispatch_key: dispatchKey,
+              actor: dispatchRecord.actor,
+              dispatch_key: dispatchRecord.dispatchKey,
               exit_code: nextRuntime.last_dispatch_exit_code,
               runtime_after: summarizeRuntime(nextRuntime),
             });

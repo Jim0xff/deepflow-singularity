@@ -103,31 +103,35 @@ if (command === "message" && process.argv[3] === "send") {
   process.exit(0);
 }
 
-if (command === "agent") {
-  const agentId = argValue("--agent");
-  const message = argValue("--message");
-  const projectDir = projectDirFromMessage(message);
-  log({ kind: "agent", agentId, projectDir });
+  if (command === "agent") {
+    const agentId = argValue("--agent");
+    const message = argValue("--message");
+    const projectDir = projectDirFromMessage(message);
+    log({ kind: "agent", agentId, projectDir, message });
 
-  if (agentId === "singularity-writer") {
-    writeFileSync(path.join(projectDir, "output.md"), "# Recovered Draft\\n\\nbody from fake writer", "utf8");
-    if (process.env.FAKE_WRITER_APPEND_HISTORY === "1") {
+    if (agentId === "singularity-writer") {
+      if (process.env.FAKE_WRITER_KEEP_OUTPUT === "1") {
+        process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# unchanged draft" }] } }));
+        process.exit(0);
+      }
+      writeFileSync(path.join(projectDir, "output.md"), "# Recovered Draft\\n\\nbody from fake writer", "utf8");
+      if (process.env.FAKE_WRITER_APPEND_HISTORY === "1") {
+        writeFileSync(
+          path.join(projectDir, "draft_review_history.md"),
+          "## 2026-04-23T10:25:00Z | role: writer | type: draft_round\\nsummary\\n",
+          "utf8",
+        );
+      }
+      if (process.env.FAKE_WRITER_EXIT_CODE === "0") {
+        process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# Recovered Draft\\n\\nbody from fake writer" }] } }));
+        process.exit(0);
+      }
+    } else if (agentId === "singularity-reviewer") {
       writeFileSync(
         path.join(projectDir, "draft_review_history.md"),
-        "## 2026-04-23T10:25:00Z | role: writer | type: draft_round\\nsummary\\n",
-        "utf8",
-      );
-    }
-    if (process.env.FAKE_WRITER_EXIT_CODE === "0") {
-      process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# Recovered Draft\\n\\nbody from fake writer" }] } }));
-      process.exit(0);
-    }
-  } else if (agentId === "singularity-reviewer") {
-    writeFileSync(
-      path.join(projectDir, "draft_review_history.md"),
-      [
-        "## 2026-04-23T10:25:00Z | role: reviewer | type: editorial_review | target: output.md | review_target: draft | verdict: approved",
-        "EDITORIAL_REVIEW",
+        [
+          "## 2026-04-23T10:25:00Z | role: reviewer | type: editorial_review | target: output.md | review_target: draft | verdict: approved",
+          "EDITORIAL_REVIEW",
         "稿件可通过。",
         "SHOULD_FIX",
         "- 节奏可继续微调。",
@@ -753,6 +757,130 @@ describe("supervisor dispatch dedupe", () => {
       expect(logEntries.some((entry) => entry.kind === "message_failed" && entry.account === "singularity-main")).toBe(
         true,
       );
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch self-heals to main menu when writer succeeds without changing output", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+          FAKE_WRITER_KEEP_OUTPUT: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        try {
+          const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+          return runtime.last_dispatch_actor === "main"
+            && runtime.last_recovery_action === "step7_writer_no_change_returned_to_menu"
+            ? runtime
+            : null;
+        } catch {
+          return null;
+        }
+      });
+
+      const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+      expect(runtime.last_dispatch_actor).toBe("main");
+      expect(runtime.last_recovery_action).toBe("step7_writer_no_change_returned_to_menu");
+      expect(runtime.last_failure_class).toBeUndefined();
+      expect(runtime.last_dispatch_message).toContain("本轮改稿未产生新的正文版本");
+      expect(runtime.last_dispatch_stdout).toContain("main menu");
+      expect(runtime.last_dispatch_stdout).not.toContain("unchanged draft");
+      expect(runtime.last_dispatch_stderr).toBe("");
+      expect(runtime.last_dispatch_exit_code).toBe(0);
+
+      const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+      expect(statusText).toContain("workflow_mode: manual");
+      expect(statusText).toContain("active_menu_scope: step_7_menu");
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      expect(logEntries.some((entry) => entry.kind === "agent" && entry.agentId === "singularity-main")).toBe(true);
+      expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
+      expect(logEntries.some((entry) => entry.kind === "message" && /main menu/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch does not advance to manual step7 when self-heal menu delivery fails", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+          FAKE_WRITER_KEEP_OUTPUT: "1",
+          FAKE_MESSAGE_SEND_FAIL: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        try {
+          const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+          return runtime.last_failure_reason === "delivery_failed" ? runtime : null;
+        } catch {
+          return null;
+        }
+      });
+
+      const runtime = JSON.parse(await readFile(join(projectDir, "runtime", "supervisor.json"), "utf8"));
+      expect(runtime.last_failure_class).toBe("blocked_repairable");
+      expect(runtime.last_failure_reason).toBe("delivery_failed");
+      expect(runtime.last_recovery_action).toBe("blocked_repairable_waiting_for_probe_or_resume_signal");
+      expect(runtime.last_recovery_action).not.toBe("step7_writer_no_change_returned_to_menu");
+      expect(runtime.last_dispatch_actor).not.toBe("main");
+
+      const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+      expect(statusText).toContain("workflow_mode: auto");
+      expect(statusText).toContain("next_actor: writer");
+      expect(statusText).not.toContain("active_menu_scope: step_7_menu");
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      expect(logEntries.some((entry) => entry.kind === "agent" && entry.agentId === "singularity-main")).toBe(true);
+      expect(logEntries.filter((entry) => entry.kind === "message_failed" && entry.account === "singularity-main").length)
+        .toBeGreaterThanOrEqual(2);
     } finally {
       await stopChild(child);
       await rm(rootDir, { recursive: true, force: true });
