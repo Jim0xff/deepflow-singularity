@@ -322,6 +322,35 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
   return { ok: failed.length === 0, sent: sent.length, failed: failed.length };
 }
 
+function sendStep7NoChangeNotice(projectDir) {
+  const delivery = resolveTelegramDelivery(projectDir);
+  if (!delivery?.enabled) return { ok: false, reason: "delivery_disabled", sent: 0, failed: 0 };
+  const message = [
+    "本轮改稿未产生新的正文版本，系统已返回 Step7 菜单。",
+    "",
+    "1. 生成正式版文章",
+    "2. 继续改稿（带上修改意见，小幅修改）",
+    "3. 重新审稿（带上修改意见，较大变更）",
+    "4. 退出当前项目。",
+  ].join("\n");
+  const chunks = chunkMessageText(message);
+  let sent = 0;
+  let failed = 0;
+  for (const chunk of chunks) {
+    const result = sendOpenClawMessage({
+      account: "main",
+      channel: delivery.channel,
+      target: delivery.to,
+      message: chunk,
+      openclawNode: OPENCLAW_NODE,
+      openclawCli: OPENCLAW_CLI,
+    });
+    if ((result.status ?? 1) === 0) sent += 1;
+    else failed += 1;
+  }
+  return { ok: failed === 0, reason: failed === 0 ? "" : "delivery_failed", sent, failed };
+}
+
 function verdictPatch(verdict, status = {}) {
   const reviewTarget = String(status.review_target || "").trim().toLowerCase();
   const finalArticleReady = String(status.final_article_ready || "").trim().toLowerCase() === "yes";
@@ -845,6 +874,15 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 });
                 clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
                 nextRuntime.last_recovery_action = "step7_writer_no_change_returned_to_menu";
+                const selfHealNotice = sendStep7NoChangeNotice(projectDir);
+                logWatchEvent(projectDir, "dispatch_self_heal_notice_result", {
+                  actor: "main",
+                  dispatch_key: dispatchKey,
+                  sent: selfHealNotice.sent,
+                  failed: selfHealNotice.failed,
+                  ok: selfHealNotice.ok,
+                  reason: selfHealNotice.reason,
+                });
                 logWatchEvent(projectDir, "dispatch_self_healed_to_step7_menu", {
                   actor,
                   dispatch_key: dispatchKey,
