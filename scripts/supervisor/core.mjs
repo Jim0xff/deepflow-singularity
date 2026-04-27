@@ -251,6 +251,19 @@ function persistLatestReviewerFeedback({ projectDir, parsedVerdict, status, disp
   writeJson(filePath, { items: items.slice(-20) });
 }
 
+function step7MenuRecoveryPatch(status = {}, nowIso = new Date().toISOString()) {
+  return {
+    workflow_mode: "manual",
+    current_step: "step_7_drafting",
+    next_actor: "main",
+    awaiting_user_choice: "yes",
+    active_menu_scope: "step_7_menu",
+    review_target: String(status.review_target || "").trim().toLowerCase() === "final" ? "final" : "draft",
+    final_writer_mode: "",
+    updated_at: nowIso,
+  };
+}
+
 async function loadAdapter(adapterPath) {
   const resolved = path.isAbsolute(adapterPath) ? adapterPath : path.resolve(__dirname, adapterPath);
   const module = await import(pathToFileURL(resolved).href);
@@ -420,7 +433,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
           dispatchKey &&
           dispatchKey === String(runtime.last_dispatch_key || "") &&
           Number(runtime.last_dispatch_status_mtime_ms || 0) === statusMtimeMs;
-        const repeatedDecision = repeated ? shouldDispatchRepeated({ runtime, projectDir }) : { shouldDispatch: true };
+            const repeatedDecision = repeated ? shouldDispatchRepeated({ runtime, projectDir }) : { shouldDispatch: true };
 
         if (!repeated || repeatedDecision.shouldDispatch) {
           const actor = result.dispatch.actor;
@@ -816,21 +829,48 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                 runtime_after: summarizeRuntime(nextRuntime),
               });
             } else if (blockedDispatchFailureReason) {
-              applyNonRecoverableDispatchFailure({
-                runtimePatch: nextRuntime,
-                dispatchKey,
-                statusMtimeMs,
-                reason: blockedDispatchFailureReason,
-                nowIso: dispatchStartedAtIso,
-                resumeSignals,
-                resumeSignalPaths,
-              });
-              logWatchEvent(projectDir, "dispatch_blocked_failure", {
-                actor,
-                dispatch_key: dispatchKey,
-                error: blockedDispatchFailureReason,
-                runtime_after: summarizeRuntime(nextRuntime),
-              });
+              const shouldSelfHealStep7WriterNoChange =
+                actor === "writer" &&
+                blockedDispatchFailureReason === "expected_file_not_changed" &&
+                repeated &&
+                String(repeatedDecision.reason || "") === "probe_due";
+              if (shouldSelfHealStep7WriterNoChange) {
+                applyStatusPatchWithLog({
+                  projectDir,
+                  statusPath,
+                  source: "blocked_no_change_step7_writer_recovery",
+                  patch: step7MenuRecoveryPatch(status, dispatchStartedAtIso),
+                  details: {
+                    actor,
+                    dispatch_key: dispatchKey,
+                    error: blockedDispatchFailureReason,
+                  },
+                });
+                clearDispatchFailure({ runtimePatch: nextRuntime, failureCounts, dispatchKey, recoverySession });
+                nextRuntime.last_recovery_action = "step7_writer_no_change_returned_to_menu";
+                logWatchEvent(projectDir, "dispatch_self_healed_to_step7_menu", {
+                  actor,
+                  dispatch_key: dispatchKey,
+                  error: blockedDispatchFailureReason,
+                  runtime_after: summarizeRuntime(nextRuntime),
+                });
+              } else {
+                applyNonRecoverableDispatchFailure({
+                  runtimePatch: nextRuntime,
+                  dispatchKey,
+                  statusMtimeMs,
+                  reason: blockedDispatchFailureReason,
+                  nowIso: dispatchStartedAtIso,
+                  resumeSignals,
+                  resumeSignalPaths,
+                });
+                logWatchEvent(projectDir, "dispatch_blocked_failure", {
+                  actor,
+                  dispatch_key: dispatchKey,
+                  error: blockedDispatchFailureReason,
+                  runtime_after: summarizeRuntime(nextRuntime),
+                });
+              }
             }
             nextRuntime.last_dispatch_message = result.dispatch.message;
             nextRuntime.last_dispatch_stdout = String(run.stdout || "").trim();
