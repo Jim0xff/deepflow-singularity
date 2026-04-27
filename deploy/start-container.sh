@@ -21,9 +21,9 @@ if [ -d "$video_workspace_dir" ]; then
   cat > "$video_workspace_dir/config/video-agent-config.json" <<EOF
 {
   "generateVideo": {
-    "baseUrl": "${VIDEO_AGENT_GENERATE_VIDEO_BASE_URL:-https://ai-video-generator-git-dev-ainur.vercel.app}",
+    "baseUrl": "${VIDEO_AGENT_GENERATE_VIDEO_BASE_URL:-https://generate-video-gamma.vercel.app}",
     "agentApiToken": "${VIDEO_AGENT_GENERATE_VIDEO_AGENT_API_TOKEN:-}",
-    "websiteUrl": "${VIDEO_AGENT_GENERATE_VIDEO_WEBSITE_URL:-https://ai-video-generator-git-dev-ainur.vercel.app/}",
+    "websiteUrl": "${VIDEO_AGENT_GENERATE_VIDEO_WEBSITE_URL:-https://generate-video-gamma.vercel.app/}",
     "publicCallbackUrl": "${VIDEO_AGENT_PUBLIC_CALLBACK_URL:-}",
     "callbackToken": "${VIDEO_AGENT_CALLBACK_TOKEN:-}"
   },

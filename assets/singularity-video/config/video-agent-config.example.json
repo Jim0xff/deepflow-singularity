@@ -1,8 +1,8 @@
 {
   "generateVideo": {
-    "baseUrl": "https://ai-video-generator-git-dev-ainur.vercel.app",
+    "baseUrl": "https://generate-video-gamma.vercel.app",
     "agentApiToken": "",
-    "websiteUrl": "https://ai-video-generator-git-dev-ainur.vercel.app/",
+    "websiteUrl": "https://generate-video-gamma.vercel.app/",
     "publicCallbackUrl": "https://YOUR_DOMAIN_OR_IP/hooks/video-job",
     "callbackToken": ""
   },
