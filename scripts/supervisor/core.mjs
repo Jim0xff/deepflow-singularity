@@ -338,7 +338,7 @@ function sendStep7NoChangeNotice(projectDir) {
   let failed = 0;
   for (const chunk of chunks) {
     const result = sendOpenClawMessage({
-      account: "main",
+      account: "singularity-main",
       channel: delivery.channel,
       target: delivery.to,
       message: chunk,
