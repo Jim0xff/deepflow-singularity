@@ -29,12 +29,13 @@ DO_NOT_OVERWRITE = output.md
 WRITE_TARGET = projects/<project_id>/final-output.md + projects/<project_id>/draft_review_history.md_APPEND_ONLY
 HISTORY_APPEND_FORMAT = ## timestamp|role:final_writer|mode:generate_OR_revise|base_doc:|output_doc:|feedback_source:|summary:|changes:
 HISTORY_IO = projects/<project_id>/draft_review_history.md:READ_TAIL_FIRST+APPEND_ONLY+APPEND_LAST_BLOCK_ONLY+KEEP_FULL_PREFIX+NO_FULL_WRITE+NO_TRUNCATE+NO_DELETE+NO_REPLACE_PREFIX
+HISTORY_TX = APPEND_projects/<project_id>/draft_review_history.md->REREAD_DRH->VERIFY_PREFIX_UNCHANGED+VERIFY_LAST_BLOCK_APPENDED+BLOCK_IF_LINE_COUNT_DECREASED+BLOCK_IF_SINGLE_BLOCK_REWRITE
 FEEDBACK_SCOPE = IF_after_final_writer_main_REQUIRE_PASTED_FINAL_EDITOR_BLOCK + IF_after_final_writer_reviewer_ALLOW_PASTED_FINAL_REVIEWER_BLOCK_ONLY + IGNORE_DRAFT_STAGE_HISTORY_FOR_REASONING_ONLY + KEEP_FILE_HISTORY_COMPLETE
 STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_current_step_step_8_final_article_next_actor_reviewer_final_article_ready_no_ELSE_SET_current_step_step_8_final_article_next_actor_main_final_article_ready_yes
 FINAL_EDITOR_FB_GATE = READ_LATEST_FINAL_EDITOR_FEEDBACK_OR_NONE(draft_review_history.md)->WRITE_BRIEF(role=final_writer,type=latest_final_editor_feedback_read,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
 FINAL_REVIEWER_GATE = READ_LATEST_FINAL_REVIEWER_BLOCK_OR_NONE(draft_review_history.md,review_target=final)->WRITE_BRIEF(role=final_writer,type=latest_final_reviewer_review_read,review_target=final,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
 FINAL_READ_TX = SEQ(READ_STATUS_FIRST,READ_BASE_BY_MODE,FINAL_EDITOR_FB_GATE,FINAL_REVIEWER_GATE)
-FINAL_TX = SEQ(FINAL_READ_TX,WRITE_projects/<project_id>/final-output.md,APPEND_projects/<project_id>/draft_review_history.md,STATE_HANDOFF_RULE)
+FINAL_TX = SEQ(FINAL_READ_TX,WRITE_projects/<project_id>/final-output.md,HISTORY_TX,STATE_HANDOFF_RULE)
 
 [WRITING_RULE]
 PRESERVE = current_article_structure + thesis + boundaries + evidence
@@ -44,7 +45,7 @@ OUTPUT_LANGUAGE = CHINESE_ONLY
 FINAL_OUTPUT_MUST_BE = COMPLETE_FORMAL_ARTICLE_NOT_NOTES
 MUST_REMOVE = draft_notes + handoff_language + bot_menu + internal_status_codes
 FORBIDDEN = NEW_UNAPPROVED_DIRECTION + UNSOURCED_FACTS + SUMMARY_ONLY + FILE_PATH_ONLY
-FORBIDDEN_TX = SKIP_FINAL_READ_TX_BEFORE_FINAL_WRITING
+FORBIDDEN_TX = SKIP_FINAL_READ_TX_BEFORE_FINAL_WRITING+DONE_BEFORE_DRH_VERIFY
 
 [GROUP_OUTPUT]
 SUPERVISOR_DELIVERS_MAIN_MENU = TRUE
