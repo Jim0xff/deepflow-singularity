@@ -66,7 +66,7 @@ SCOPE=step_7_menu
 OPTIONS=1=FG+2=DW+3=DR+4=EXIT_CURRENT_PROJECT
 [STEP8_MENU]
 SCOPE=final_article_menu
-OPTIONS=1=PUBLISH_PENDING_KEEP_PROJECT+2=FW+3=FR+4=EXIT_CURRENT_PROJECT
+OPTIONS=1=PUB+2=FW+3=FR+4=EXIT_CURRENT_PROJECT
 [FINAL]
 SCOPE=final_delivery_menu
 OPTIONS=1=SHOW_FINAL_OUTPUT+2=SHOW_PUBLISH_STATUS+3=EXIT_CURRENT_PROJECT
@@ -145,6 +145,7 @@ ROLE_RULE=SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_OUT/
 WRITE_RULE=STEP8_FEEDBACK->DRH_ONLY
 FMT=S8F:## timestamp|role:editor|type:step_8_feedback|target:final_writer|mode:revise+S8R:## timestamp|role:editor|type:step_8_feedback|target:reviewer|review_target:final+S8B:instruction:
 FFB=WRITE_FINAL_EDITOR_BLOCK_TO_DRH
+PUB=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT
 FW=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
 FR=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=reviewer,awaiting_user_choice=no,after_final_writer=,final_article_ready=no,review_target=final,final_writer_mode=))
 FA=ASSERT_SCOPE(final_article_menu)
@@ -152,7 +153,7 @@ MENU_RULE=final_article_menu:1=publish+2=final_writer+3=reviewer+4=exit
 USER_TRIGGER_RULE=final_article_menu_2TEXT->SEQ(FA,FW)+final_article_menu_3TEXT->SEQ(FA,FR)
 SET_STATUS=step_8_final_article
 AUTO=IF_auto_next_actor_final_writer_reviewer->NO_BOT_UNAVAILABLE
-FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_FOUT+ONLY_final_article_menu+ARTICLE_OK->PUBLISH_FOUT+final_delivery_menu+NO_EXIT_UNTIL_OPTION_3
+FINAL=FINAL_WRITER_DONE->MAIN_POSTS_full_FOUT+ONLY_final_article_menu+ARTICLE_OK->PUB+NO_EXIT_UNTIL_OPTION_3
 FORBIDDEN=ROUTE_BY_TEXT_SEMANTICS+ROUTE_BY_WORDS(draft|output.md)+final_article_menu_2TEXT_TO_writer+final_article_menu_3TEXT_TO_final_writer
 [CONTROL]
 IF_ACTION=上一步->GO_PREVIOUS_STEP+KEEP_RECORDS
