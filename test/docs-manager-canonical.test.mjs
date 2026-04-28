@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "@jest/globals";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { rm, readFile, readdir, access } from "node:fs/promises";
+import { rm, readFile, readdir, access, mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
@@ -117,10 +117,46 @@ describe("docs-manager canonical-v1", () => {
     await expect(readFile(taskPath, "utf8")).resolves.toBe("task body");
     await expect(readFile(receiptPath, "utf8")).resolves.toBe("receipt body");
   });
+
+  test("unbind falls back to project-code and clears main session directories", async () => {
+    const bindingId = "http:singularity-dm-unbind-fallback";
+    const projectCode = `dmproj-${Date.now()}`;
+    const openclawHome = path.join("/tmp", `openclaw-test-${Date.now()}`);
+    const mainSessionsDir = path.join(openclawHome, "agents", "main", "sessions");
+    const singularityMainSessionsDir = path.join(openclawHome, "agents", "singularity-main", "sessions");
+
+    await mkdir(mainSessionsDir, { recursive: true });
+    await mkdir(singularityMainSessionsDir, { recursive: true });
+    await writeFile(path.join(mainSessionsDir, "main.jsonl"), "main-session\n", "utf8");
+    await writeFile(path.join(singularityMainSessionsDir, "singularity-main.jsonl"), "singularity-main-session\n", "utf8");
+
+    const result = await expectOk(["unbind", bindingId, projectCode], {
+      env: { OPENCLAW_HOME: openclawHome },
+    });
+    expect(result.stdout).toContain("✅ SESSION_BACKUP ");
+    expect(result.stdout).toContain(`✅ UNBOUND ${bindingId} <- ${projectCode}`);
+
+    const backupLine = result.stdout.split("\n").find((line) => line.startsWith("✅ SESSION_BACKUP "));
+    expect(backupLine).toBeTruthy();
+    const backupDir = String(backupLine || "").replace("✅ SESSION_BACKUP ", "").trim();
+
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+
+    const manifestText = await readFile(path.join(backupDir, "manifest.json"), "utf8");
+    expect(manifestText).toContain('"agentId": "main"');
+    expect(manifestText).toContain('"agentId": "singularity-main"');
+    const clearResultText = await readFile(path.join(backupDir, "clear-result.json"), "utf8");
+    expect(clearResultText).toContain('"main"');
+    expect(clearResultText).toContain('"singularity-main"');
+    expect(await readdir(mainSessionsDir)).toEqual([]);
+    expect(await readdir(singularityMainSessionsDir)).toEqual([]);
+
+    await rm(openclawHome, { recursive: true, force: true });
+  });
 });
 
-async function expectOk(args) {
-  const result = await runDocsManager(args);
+async function expectOk(args, options = {}) {
+  const result = await runDocsManager(args, options);
   expect(result.code).toBe(0);
   expect(result.stdout).toContain("✅");
   return result;
@@ -174,6 +210,7 @@ function toNamedArgs(args) {
 
   switch (action) {
     case "bind":
+    case "unbind":
       if (target) {
         named.push("--project-code", target);
       }

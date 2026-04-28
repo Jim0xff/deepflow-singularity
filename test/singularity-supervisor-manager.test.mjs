@@ -472,11 +472,58 @@ if (args.includes("--action write")) {
     const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("--action unbind --binding-id http:singularity-demo-exited");
+    expect(calls[0]).toContain("--project-code demo-exited");
     const statusText = await readFile(join(projectDir, "status.md"), "utf8");
     expect(statusText).toContain("docs_binding_state: unbound");
     expect(statusText).toContain("docs_unbound_at:");
     expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("");
     expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("does not mark project unbound when docs-manager unbind fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "singularity-supervisor-exit-unbind-fail-"));
+    const callsPath = join(root, "docs-calls.log");
+    const scriptPath = join(root, "fake-supervisor.mjs");
+    const docsManagerPath = join(root, "fake-docs-manager.mjs");
+    const projectDir = join(root, "project-unbind-fail");
+    const activeDir = join(root, "active");
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(join(root, "CURRENT_PROJECT"), "project-unbind-fail\n", "utf8");
+    await writeFile(join(activeDir, "telegram:-100.current"), "project-unbind-fail\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      "project_id: demo-unbind-fail\nstatus: exited\ncurrent_step: exited\ndocs_binding_state: bound\ndocs_publish_binding_id: http:singularity-demo-unbind-fail\ndocs_publish_state: done\n",
+      "utf8",
+    );
+    await writeFile(scriptPath, "", "utf8");
+    await writeFile(
+      docsManagerPath,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(callsPath)}, process.argv.slice(2).join(" ") + "\\n");\nconsole.error("❌ project is not bound for http:singularity-demo-unbind-fail");\nprocess.exit(1);\n`,
+      "utf8",
+    );
+
+    const manager = createSingularitySupervisorManager({
+      projectsRoot: root,
+      intervalMs: 60_000,
+      scriptPath,
+      docsManagerPath,
+    });
+
+    await manager.runNow();
+
+    const calls = (await readFile(callsPath, "utf8")).trim().split("\n");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--action unbind --binding-id http:singularity-demo-unbind-fail");
+    expect(calls[0]).toContain("--project-code demo-unbind-fail");
+    const statusText = await readFile(join(projectDir, "status.md"), "utf8");
+    expect(statusText).toContain("docs_binding_state: bound");
+    expect(statusText).not.toContain("docs_unbound_at:");
+    expect((await readFile(join(root, "CURRENT_PROJECT"), "utf8")).trim()).toBe("project-unbind-fail");
+    expect((await readFile(join(activeDir, "telegram:-100.current"), "utf8")).trim()).toBe("project-unbind-fail");
 
     await rm(root, { recursive: true, force: true });
   });

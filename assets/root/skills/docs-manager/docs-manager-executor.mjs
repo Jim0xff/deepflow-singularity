@@ -16,9 +16,13 @@ const AGENTS_ROOT = path.join(OPENCLAW_HOME, "agents");
 const SESSION_BACKUPS_ROOT = path.join(OPENCLAW_HOME, "session-backups");
 const SESSION_CLEAR_DELAY_MS = 2_000;
 const SINGULARITY_SESSION_AGENT_IDS = [
+  "main",
   "singularity-main",
+  "writer",
   "singularity-writer",
+  "reviewer",
   "singularity-reviewer",
+  "final-writer",
   "singularity-final-writer",
 ];
 
@@ -393,9 +397,14 @@ async function bindProject(args) {
 async function unbindProject(args) {
   validateBindingId(args.bindingId);
   const bindings = await readBindings();
-  const projectCode = typeof bindings[args.bindingId] === "string" ? bindings[args.bindingId] : "";
+  let projectCode = typeof bindings[args.bindingId] === "string" ? bindings[args.bindingId] : "";
   if (!projectCode) {
-    fail(`project is not bound for ${args.bindingId}`);
+    const fallbackProjectCode = String(args.projectCode || "").trim();
+    if (!fallbackProjectCode || !shouldResetSingularitySessions(args.bindingId)) {
+      fail(`project is not bound for ${args.bindingId}`);
+    }
+    validateProjectCode(fallbackProjectCode);
+    projectCode = fallbackProjectCode;
   }
   let backupDir = "";
   if (shouldResetSingularitySessions(args.bindingId)) {

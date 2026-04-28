@@ -255,14 +255,7 @@ async function unbindExitedProjectDocs({
     if (inFlight.has(unbindKey)) continue;
     inFlight.add(unbindKey);
     try {
-      try {
-        await runDocsManager(docsManagerPath, ["--action", "unbind", "--binding-id", bindingId]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("project is not bound")) {
-          throw error;
-        }
-      }
+      await runDocsManager(docsManagerPath, ["--action", "unbind", "--binding-id", bindingId, "--project-code", projectId]);
 
       updateStatusMdAtomic(statusPath, {
         docs_publish_binding_id: bindingId,
