@@ -6,8 +6,10 @@ params:
     default: "2026.3.2"
   agent_model:
     default: "openai/gpt-5.3-codex"
+  writer_model:
+    default: "google/gemini-3.1-pro-preview"
   final_writer_model:
-    default: "google/gemini-2.5-pro"
+    default: "google/gemini-3.1-pro-preview"
   singularity_main_telegram_bot_key:
     required: false
     default: ""
@@ -125,7 +127,7 @@ agents:
     model: "${agent_model}"
   - workspace: "singularity-writer"
     name: "singularity-writer"
-    model: "${agent_model}"
+    model: "${writer_model}"
   - workspace: "singularity-final-writer"
     name: "singularity-final-writer"
     model: "${final_writer_model}"
