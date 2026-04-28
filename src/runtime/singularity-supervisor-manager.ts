@@ -79,6 +79,13 @@ export function createSingularitySupervisorManager(
       logger,
     });
 
+    await unbindExitedProjectDocs({
+      projectsRoot: options.projectsRoot,
+      docsManagerPath,
+      inFlight,
+      logger,
+    });
+
     await clearPointersForAgentUnboundExitedProjects({
       projectsRoot: options.projectsRoot,
       logger,
@@ -217,6 +224,62 @@ async function resolveCurrentProject(
   };
 }
 
+async function unbindExitedProjectDocs({
+  projectsRoot,
+  docsManagerPath,
+  inFlight,
+  logger,
+}: {
+  projectsRoot: string;
+  docsManagerPath: string;
+  inFlight: Set<string>;
+  logger: Logger;
+}): Promise<void> {
+  const entries = await fs.readdir(projectsRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const projectDir = join(projectsRoot, entry.name);
+    const statusPath = join(projectDir, "status.md");
+    const statusText = await fs.readFile(statusPath, "utf8").catch(() => "");
+    if (!statusText) continue;
+
+    const status = parseStatusMd(statusText);
+    if (!shouldUnbindExitedProject(status)) continue;
+
+    const projectId = String(status.project_id || entry.name).trim() || entry.name;
+    const bindingId = resolveDocsBindingId(status, projectId);
+    if (!isSingularityBindingId(bindingId)) continue;
+
+    const unbindKey = `${projectDir}:unbind`;
+    if (inFlight.has(unbindKey)) continue;
+    inFlight.add(unbindKey);
+    try {
+      try {
+        await runDocsManager(docsManagerPath, ["--action", "unbind", "--binding-id", bindingId]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("project is not bound")) {
+          throw error;
+        }
+      }
+
+      updateStatusMdAtomic(statusPath, {
+        docs_publish_binding_id: bindingId,
+        docs_binding_state: "unbound",
+        docs_unbound_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      logger.info(`[singularity-publish] unbound ${projectId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[singularity-publish] unbind failed ${projectId}: ${message}`);
+    } finally {
+      inFlight.delete(unbindKey);
+    }
+  }
+}
+
 function parseStatusMd(text: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of String(text || "").split("\n")) {
@@ -259,6 +322,12 @@ function shouldPublishToDocs(status: Record<string, string>): boolean {
     String(status.docs_publish_requested || "").trim().toLowerCase() === "yes"
     && String(status.docs_publish_state || "").trim().toLowerCase() !== "done"
   );
+}
+
+function shouldUnbindExitedProject(status: Record<string, string>): boolean {
+  if (!shouldClearProjectPointers(status)) return false;
+  const bindingState = String(status.docs_binding_state || "").trim().toLowerCase();
+  return bindingState !== "unbound";
 }
 
 function shouldEnsureDocsBinding(status: Record<string, string>): boolean {
@@ -317,6 +386,15 @@ function shouldClearProjectPointers(status: Record<string, string>): boolean {
 
 function didAgentUnbindDocs(status: Record<string, string>): boolean {
   return String(status.docs_binding_state || "").trim().toLowerCase() === "unbound";
+}
+
+function resolveDocsBindingId(status: Record<string, string>, projectId: string): string {
+  const bindingId = String(status.docs_publish_binding_id || "").trim();
+  return bindingId || `http:singularity-${projectId}`;
+}
+
+function isSingularityBindingId(bindingId: string): boolean {
+  return /^http:singularity-[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(bindingId || ""));
 }
 
 function runSupervisorStart(scriptPath: string, projectDir: string): Promise<SupervisorStartResult> {

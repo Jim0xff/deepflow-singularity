@@ -158,7 +158,7 @@ FORBIDDEN=ROUTE_BY_TEXT_SEMANTICS+ROUTE_BY_WORDS(draft|output.md)+final_article_
 IF_ACTION=上一步->GO_PREVIOUS_STEP+KEEP_RECORDS
 IF_ACTION=下一步->REQUIRE_CURRENT_STEP_WRITTEN+GO_NEXT_STEP
 IF_ACTION=重来->KEEP_RECORDS+CREATE_NEW_ROUND+STATUS_RESTARTED
-IF_ACTION=退出项目->WRITE_STAGE+LOG_TRANSITION+WRITE_EXIT_REASON_AND_STOP_POSITION_AND_ACCUMULATED_ASSETS+RUN(node ~/.openclaw/skills/docs-manager/docs-manager-executor.mjs --action unbind --binding-id http:singularity-<project_id>)OK_OR_not_bound_ELSE_BLOCK+SET_docs_publish_binding_id=http:singularity-<project_id>,docs_binding_state=unbound,docs_unbound_at=now+STATUS_EXITED
+IF_ACTION=退出项目->WRITE_STAGE+LOG_TRANSITION+WRITE_EXIT_REASON_AND_STOP_POSITION_AND_ACCUMULATED_ASSETS+STATUS_EXITED
 [TRANSITIONS]
 STEP_TRANSITION_MUST_BE_LOGGED=TRUE
 STEP_TRANSITION_LOG=IL+role_editor+type_transition+target_next_step+content_user_instruction
