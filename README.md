@@ -84,6 +84,15 @@ It expects a self-hosted GitHub Actions runner on the target host and uses:
 Each branch can map to its own domain/port/env block inside that YAML config.
 The `main` branch currently auto-deploys to `188.166.52.45`.
 
+For manual full-container redeploys of an extra instance on the same host, use:
+
+```bash
+./scripts/deploy-compose-instance.sh <instance> [branch]
+```
+
+The script resets code to `origin/<branch>`, reuses the instance's existing `.env` by default, regenerates `.env` from `/opt/deepflow-singularity-config/config.yaml` when a matching `environments.<instance>` block exists, and then runs a full `docker compose up -d --build --force-recreate --remove-orphans`.
+Deployment-complete Telegram notify is config-first: put defaults under `environments.<instance>.deploy.notify.{chat_id,account,message}` in `config.yaml`, and use `DEPLOY_NOTIFY_*` env vars only when you need to override them for a one-off deploy.
+
 For current OpenClaw builds, plan for at least `8 GB RAM` on production hosts. `4 GB` instances can start, but factory reset, workspace rebuild, plugin enablement, and gateway recovery are much more likely to hit memory pressure during deployment.
 
 ## Supervisor
