@@ -21,7 +21,7 @@ const STEP_5_MAIN_MESSAGE = [
   "Current step: step_5_debate",
   "Read status.md.",
   "只回复：本轮对垒已完成。",
-  "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读。",
+  "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读 3. 退出当前项目。",
   "Do not summarize or repeat sentinel/reviewer arguments.",
 ].join("\n");
 
@@ -551,7 +551,7 @@ export async function tick(ctx) {
             awaiting_user_choice: "yes",
             active_menu_scope: "step_5_menu",
             active_menu_options:
-              "1=WRITE_AND_POST_FULL_NEXT_Sx_THEN_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK",
+              "1=WRITE_AND_POST_FULL_NEXT_Sx_THEN_SET(workflow_mode=auto,next_actor=reviewer,awaiting_user_choice=no);2=WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_6_AND_EXECUTE_STEP_6_FEEDBACK;3=EXIT_CURRENT_PROJECT",
           },
         },
       };

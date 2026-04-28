@@ -74,7 +74,9 @@ describe("singularity supervisor adapter", () => {
       awaiting_user_choice: "yes",
       active_menu_scope: "step_5_menu",
     });
+    expect(result.dispatch.message).toContain("3. 退出当前项目");
     expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("WRITE_AND_POST_FULL_NEXT_Sx");
+    expect(result.dispatch.afterStatusPatch.active_menu_options).toContain("3=EXIT_CURRENT_PROJECT");
   });
 
   test("dispatches writer for step 7 drafting", async () => {
