@@ -84,6 +84,8 @@ It expects a self-hosted GitHub Actions runner on the target host and uses:
 Each branch can map to its own domain/port/env block inside that YAML config.
 The `main` branch currently auto-deploys to `188.166.52.45`.
 
+For current OpenClaw builds, plan for at least `8 GB RAM` on production hosts. `4 GB` instances can start, but factory reset, workspace rebuild, plugin enablement, and gateway recovery are much more likely to hit memory pressure during deployment.
+
 ## Supervisor
 
 A generic supervisor core now lives under:
