@@ -458,8 +458,10 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
 
   let texts = parseAgentPayloadTexts(run.stdout);
   if (dispatch.deliverFromChangedFile) {
-    const block = latestMarkdownBlock(readText(path.join(dispatch.projectDir, dispatch.deliverFromChangedFile)));
-    if (block) texts = [block];
+    const changedFileText = readText(path.join(dispatch.projectDir, dispatch.deliverFromChangedFile));
+    const mode = String(dispatch.deliverChangedFileMode || "").trim().toLowerCase();
+    const deliveredText = mode === "full_text" ? changedFileText.trim() : latestMarkdownBlock(changedFileText);
+    if (deliveredText) texts = [deliveredText];
   }
   if (!texts.length) {
     nextRuntime.last_delivery_count = 0;

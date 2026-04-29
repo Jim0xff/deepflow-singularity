@@ -103,18 +103,22 @@ if (command === "message" && process.argv[3] === "send") {
   process.exit(0);
 }
 
-  if (command === "agent") {
-    const agentId = argValue("--agent");
-    const message = argValue("--message");
-    const projectDir = projectDirFromMessage(message);
-    log({ kind: "agent", agentId, projectDir, message });
+if (command === "agent") {
+  const agentId = argValue("--agent");
+  const message = argValue("--message");
+  const projectDir = projectDirFromMessage(message);
+  log({ kind: "agent", agentId, projectDir, message });
+  const writerDraftText =
+    process.env.FAKE_WRITER_MULTI_SECTION === "1"
+      ? "# Recovered Draft\\n\\nintro\\n\\n## Section One\\n\\npart one\\n\\n## Section Two\\n\\npart two\\n\\n## Appendix\\n\\nappendix body"
+      : "# Recovered Draft\\n\\nbody from fake writer";
 
-    if (agentId === "singularity-writer") {
-      if (process.env.FAKE_WRITER_KEEP_OUTPUT === "1") {
-        process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# unchanged draft" }] } }));
-        process.exit(0);
-      }
-      writeFileSync(path.join(projectDir, "output.md"), "# Recovered Draft\\n\\nbody from fake writer", "utf8");
+  if (agentId === "singularity-writer") {
+    if (process.env.FAKE_WRITER_KEEP_OUTPUT === "1") {
+      process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# unchanged draft" }] } }));
+      process.exit(0);
+    }
+      writeFileSync(path.join(projectDir, "output.md"), writerDraftText, "utf8");
       if (process.env.FAKE_WRITER_APPEND_HISTORY === "1") {
         writeFileSync(
           path.join(projectDir, "draft_review_history.md"),
@@ -123,7 +127,7 @@ if (command === "message" && process.argv[3] === "send") {
         );
       }
       if (process.env.FAKE_WRITER_EXIT_CODE === "0") {
-        process.stdout.write(JSON.stringify({ result: { payloads: [{ text: "# Recovered Draft\\n\\nbody from fake writer" }] } }));
+        process.stdout.write(JSON.stringify({ result: { payloads: [{ text: writerDraftText }] } }));
         process.exit(0);
       }
     } else if (agentId === "singularity-reviewer") {
@@ -703,6 +707,59 @@ describe("supervisor dispatch dedupe", () => {
       const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
       expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
       expect(logEntries.some((entry) => entry.kind === "message" && /Recovered Draft/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch delivers full writer draft from output.md instead of only the last markdown block", async () => {
+    const { rootDir, projectDir, logPath, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+          FAKE_WRITER_MULTI_SECTION: "1",
+          FAKE_WRITER_EXIT_CODE: "0",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        let text = "";
+        try {
+          text = await readFile(logPath, "utf8");
+        } catch {
+          return null;
+        }
+        const logEntries = parseJsonLines(text);
+        return logEntries.find((entry) => entry.kind === "message" && entry.account === "singularity-main") || null;
+      });
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      const delivery = logEntries.find((entry) => entry.kind === "message" && entry.account === "singularity-main");
+      expect(delivery.message).toContain("# Recovered Draft");
+      expect(delivery.message).toContain("## Section One");
+      expect(delivery.message).toContain("## Section Two");
+      expect(delivery.message).toContain("## Appendix");
+      expect(delivery.message.startsWith("## Appendix")).toBe(false);
     } finally {
       await stopChild(child);
       await rm(rootDir, { recursive: true, force: true });

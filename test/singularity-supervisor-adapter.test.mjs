@@ -103,6 +103,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
     expect(result.dispatch.suppressDelivery).toBeUndefined();
     expect(result.dispatch.deliverFromChangedFile).toBe("output.md");
+    expect(result.dispatch.deliverChangedFileMode).toBe("full_text");
     expect(result.dispatch.deliveryActor).toBe("main");
     expect(result.dispatch.deliveryFailureDoesNotBlockSuccess).toBe(true);
     expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("output.md");
@@ -766,6 +767,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.suppressDelivery).toBe(true);
     expect(result.dispatch.deliverFromChangedFile).toBeUndefined();
     expect(result.dispatch.recoveryDeliverFromChangedFile).toBe("final-output.md");
+    expect(result.dispatch.deliverChangedFileMode).toBe("full_text");
     expect(result.dispatch.recoveryDeliveryActor).toBe("main");
     expect(result.dispatch.deliverRequiresChangedFile).toBe(true);
     expect(result.dispatch.afterSuccessWhenFilesChanged).toEqual(["final-output.md"]);
