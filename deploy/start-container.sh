@@ -4,6 +4,22 @@ set -eu
 echo "[container-start] running clawchef cook"
 clawchef cook . -s --gateway-mode none
 
+shared_root="/.openclaw/shared"
+legacy_shared="/root/.openclaw/shared"
+
+mkdir -p "$shared_root"
+if [ -d "$legacy_shared" ] && [ ! -L "$legacy_shared" ]; then
+  if find "$legacy_shared" -mindepth 1 -maxdepth 1 | read -r _; then
+    cp -a "$legacy_shared"/. "$shared_root"/
+    echo "[container-start] migrated legacy shared state to $shared_root"
+  fi
+  rm -rf "$legacy_shared"
+fi
+if [ ! -e "$legacy_shared" ]; then
+  ln -s "$shared_root" "$legacy_shared"
+  echo "[container-start] linked legacy shared path to $shared_root"
+fi
+
 for workspace in singularity-main singularity-reviewer singularity-writer singularity-video; do
   asset_dir="/app/assets/$workspace"
   workspace_dir="/root/.openclaw/workspace-$workspace"
