@@ -10,6 +10,7 @@ Behavior:
   - On Debian/Ubuntu hosts, installs git/curl first if they are missing
   - On Debian/Ubuntu hosts, installs Docker Engine + Compose plugin if missing
   - Full redeploys one Docker Compose instance under /opt/deepflow-singularity/<instance>
+  - Pulls code from the repo's origin remote by default (or DEPLOY_REPO_URL)
   - Resets code to origin/<branch>
   - Reuses the instance's existing .env by default
   - If /opt/deepflow-singularity-config/config.yaml contains environments.<instance>,
@@ -164,18 +165,25 @@ NOTIFY_MESSAGE="${DEPLOY_NOTIFY_MESSAGE:-}"
 
 ensure_base_tools
 
-if [[ -z "$REPO_URL" ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  REPO_URL="$(git rev-parse --show-toplevel)"
+if [[ -z "$REPO_URL" ]]; then
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    REPO_URL="$(git config --get remote.origin.url 2>/dev/null || true)"
+  fi
 fi
 
 if [[ -z "$REPO_URL" ]]; then
-  REPO_URL="$(git config --get remote.origin.url 2>/dev/null || true)"
-fi
-
-if [[ -z "$REPO_URL" ]]; then
-  echo "Unable to determine deploy source; run inside a git repo or set DEPLOY_REPO_URL." >&2
+  echo "Unable to determine deploy source; configure origin or set DEPLOY_REPO_URL." >&2
   exit 1
 fi
+
+case "$REPO_URL" in
+  https://*|http://*|git@*:*|ssh://*)
+    ;;
+  *)
+    echo "DEPLOY_REPO_URL must be a git remote URL, not a local path: $REPO_URL" >&2
+  exit 1
+    ;;
+esac
 
 TARGET_DIR="$BASE_DIR/$INSTANCE"
 TARGET_ENV="$TARGET_DIR/.env"
@@ -185,11 +193,6 @@ mkdir -p "$BASE_DIR"
 
 if [[ ! -d "$TARGET_DIR/.git" ]]; then
   git clone "$REPO_URL" "$TARGET_DIR"
-fi
-
-if [[ -d "$REPO_URL/.git" ]]; then
-  git config --global --add safe.directory "$REPO_URL" >/dev/null 2>&1 || true
-  git config --global --add safe.directory "$REPO_URL/.git" >/dev/null 2>&1 || true
 fi
 
 git config --global --add safe.directory "$TARGET_DIR" >/dev/null 2>&1 || true
