@@ -90,7 +90,7 @@ For manual full-container redeploys of an extra instance on the same host, use:
 ./scripts/deploy-compose-instance.sh <instance> [branch]
 ```
 
-The script resets code to `origin/<branch>`, reuses the instance's existing `.env` by default, regenerates `.env` from `/opt/deepflow-singularity-config/config.yaml` when a matching `environments.<instance>` block exists, and then runs a full `docker compose up -d --build --force-recreate --remove-orphans`.
+On Debian/Ubuntu hosts, the script now installs `git`/`curl` first if needed, auto-installs Docker Engine plus the Compose plugin when missing, resets code to `origin/<branch>`, reuses the instance's existing `.env` by default, regenerates `.env` from `/opt/deepflow-singularity-config/config.yaml` when a matching `environments.<instance>` block exists, and then runs a full `docker compose up -d --build --force-recreate --remove-orphans`.
 Deployment-complete Telegram notify is config-first: put defaults under `environments.<instance>.deploy.notify.{chat_id,account,message}` in `config.yaml`, and use `DEPLOY_NOTIFY_*` env vars only when you need to override them for a one-off deploy.
 The GitHub Actions deploy job now recreates `.env` from a temporary file before each deploy so stale ownership on old `.env` files does not block automatic redeploys.
 

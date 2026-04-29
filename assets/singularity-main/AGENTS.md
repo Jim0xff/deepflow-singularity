@@ -130,7 +130,7 @@ TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_
 WRITE_RULE=STEP7_FEEDBACK->DRH_ONLY
 FMT=S7W:## timestamp|role:editor|type:step_7_feedback|target:writer+S7R:## timestamp|role:editor|type:step_7_feedback|target:reviewer+S7B:instruction:
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT
-DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)
+DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)+DRH_TAIL_APPEND_ONLY+NO_BACKFILL+NO_REORDER+VERIFY_LAST_BLOCK_IS_NEW
 DW=SEQ(DFB(target=writer),SET(auto,current_step=step_7_drafting,next_actor=writer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=))
 DR=SEQ(DFB(target=reviewer),SET(auto,current_step=step_7_drafting,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=))
 FG=SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
@@ -146,7 +146,7 @@ FORBIDDEN=ROUTE_BY_TEXT_SEMANTICS+ROUTE_BY_WORDS(title|正式版|publish|final-o
 ROLE_RULE=SUPERVISOR_ONLY+MAIN_HANDOFF+MAIN_NO_SESSION_CALL+MAIN_NEVER_EDIT_OUT/FOUT+final_writer->FOUT+reviewer->DRH
 WRITE_RULE=STEP8_FEEDBACK->DRH_ONLY
 FMT=S8F:## timestamp|role:editor|type:step_8_feedback|target:final_writer|mode:revise+S8R:## timestamp|role:editor|type:step_8_feedback|target:reviewer|review_target:final+S8B:instruction:
-FFB=WRITE_FINAL_EDITOR_BLOCK_TO_DRH
+FFB=WRITE_FINAL_EDITOR_BLOCK_TO_DRH+DRH_TAIL_APPEND_ONLY+NO_BACKFILL+NO_REORDER+VERIFY_LAST_BLOCK_IS_NEW
 PUB=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT
 FW=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
 FR=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=reviewer,awaiting_user_choice=no,after_final_writer=,final_article_ready=no,review_target=final,final_writer_mode=))

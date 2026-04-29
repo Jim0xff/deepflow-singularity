@@ -7,6 +7,8 @@ Usage:
   deploy-compose-instance.sh <instance> [branch]
 
 Behavior:
+  - On Debian/Ubuntu hosts, installs git/curl first if they are missing
+  - On Debian/Ubuntu hosts, installs Docker Engine + Compose plugin if missing
   - Full redeploys one Docker Compose instance under /opt/deepflow-singularity/<instance>
   - Resets code to origin/<branch>
   - Reuses the instance's existing .env by default
@@ -31,6 +33,118 @@ Config defaults:
 EOF
 }
 
+run_privileged() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+    return
+  fi
+
+  echo "This action requires root privileges or sudo: $*" >&2
+  exit 1
+}
+
+apt_install() {
+  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+}
+
+ensure_base_tools() {
+  local missing=()
+
+  command -v git >/dev/null 2>&1 || missing+=("git")
+  command -v curl >/dev/null 2>&1 || missing+=("curl")
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Missing required tools (${missing[*]}) and apt-get is unavailable for automatic install." >&2
+    exit 1
+  fi
+
+  run_privileged apt-get update
+  apt_install ca-certificates "${missing[@]}"
+}
+
+install_docker() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Docker auto-install currently supports Debian/Ubuntu hosts with apt-get only." >&2
+    exit 1
+  fi
+
+  if [[ ! -f /etc/os-release ]]; then
+    echo "Unable to detect OS for Docker auto-install." >&2
+    exit 1
+  fi
+
+  # shellcheck disable=SC1091
+  . /etc/os-release
+
+  if [[ "${ID:-}" != "ubuntu" && "${ID:-}" != "debian" ]]; then
+    echo "Docker auto-install currently supports Ubuntu/Debian only (detected: ${ID:-unknown})." >&2
+    exit 1
+  fi
+
+  local codename="${VERSION_CODENAME:-}"
+  if [[ -z "$codename" ]]; then
+    echo "Unable to determine OS codename for Docker apt repository." >&2
+    exit 1
+  fi
+
+  local arch
+  arch="$(dpkg --print-architecture)"
+
+  run_privileged apt-get update
+  apt_install ca-certificates curl
+  run_privileged install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL "https://download.docker.com/linux/$ID/gpg" | run_privileged tee /etc/apt/keyrings/docker.asc >/dev/null
+  run_privileged chmod a+r /etc/apt/keyrings/docker.asc
+  printf "deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n" \
+    "$arch" "$ID" "$codename" \
+    | run_privileged tee /etc/apt/sources.list.d/docker.list >/dev/null
+  run_privileged apt-get update
+  apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  if command -v systemctl >/dev/null 2>&1; then
+    run_privileged systemctl enable --now docker
+  fi
+}
+
+ensure_docker() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    return
+  fi
+
+  install_docker
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    echo "Docker install completed but docker compose is still unavailable." >&2
+    exit 1
+  fi
+}
+
+docker_cmd() {
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+    return
+  fi
+
+  run_privileged docker "$@"
+}
+
+docker_compose_cmd() {
+  if docker info >/dev/null 2>&1; then
+    docker compose "$@"
+    return
+  fi
+
+  run_privileged docker compose "$@"
+}
+
 INSTANCE="${1:-}"
 BRANCH="${2:-main}"
 
@@ -47,6 +161,8 @@ PRUNE_IMAGES="${DEPLOY_PRUNE_IMAGES:-false}"
 NOTIFY_CHAT_ID="${DEPLOY_NOTIFY_CHAT_ID:-}"
 NOTIFY_ACCOUNT="${DEPLOY_NOTIFY_ACCOUNT:-singularity-main}"
 NOTIFY_MESSAGE="${DEPLOY_NOTIFY_MESSAGE:-}"
+
+ensure_base_tools
 
 if [[ -z "$REPO_URL" ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   REPO_URL="$(git rev-parse --show-toplevel)"
@@ -110,14 +226,16 @@ if [[ ! -f "$TARGET_ENV" ]]; then
   exit 1
 fi
 
-docker compose -p "$INSTANCE" up -d --build --force-recreate --remove-orphans
+ensure_docker
+
+docker_compose_cmd -p "$INSTANCE" up -d --build --force-recreate --remove-orphans
 
 if [[ "$SKIP_NGINX" != "true" && "$HAS_CONFIG_ENV" == "true" ]]; then
   "$TARGET_DIR/scripts/deploy-nginx.sh" "$INSTANCE"
 fi
 
 if [[ "$PRUNE_IMAGES" == "true" ]]; then
-  docker image prune -f
+  docker_cmd image prune -f
 fi
 
 APP_PORT="$(grep -E '^APP_PORT=' "$TARGET_ENV" | tail -n 1 | cut -d= -f2- || true)"
@@ -147,7 +265,7 @@ if [[ -n "$NOTIFY_CHAT_ID" && -n "$APP_PORT" ]]; then
     if [[ -z "$NOTIFY_MESSAGE" ]]; then
       NOTIFY_MESSAGE="部署完成，$INSTANCE 实例已就绪。"
     fi
-    docker exec \
+    docker_cmd exec \
       -e DEPLOY_NOTIFY_ACCOUNT="$NOTIFY_ACCOUNT" \
       -e DEPLOY_NOTIFY_CHAT_ID="$NOTIFY_CHAT_ID" \
       -e DEPLOY_NOTIFY_MESSAGE="$NOTIFY_MESSAGE" \
