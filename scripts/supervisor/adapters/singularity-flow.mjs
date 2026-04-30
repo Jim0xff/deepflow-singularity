@@ -15,36 +15,6 @@ const STEP_5_REVIEWER_MESSAGE = [
   "Still update status.md to workflow_mode=auto,current_step=step_5_debate,next_actor=main,awaiting_user_choice=yes.",
 ].join("\n");
 
-const STEP_5_MAIN_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_5_debate",
-  "Read status.md.",
-  "只回复：本轮对垒已完成。",
-  "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读 3. 退出当前项目。",
-  "Do not summarize or repeat sentinel/reviewer arguments.",
-].join("\n");
-
-const STEP_7_MAIN_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_7_drafting",
-  "Read status.md, output.md, and draft_review_history.md.",
-  "Ignore all prior session context. Use only status.md, output.md, draft_review_history.md from {{projectDir}}. 当前仍处于草稿写作步骤，不是正式版步骤。选项1是唯一允许进入 final_writer / final-output.md 的入口。选项2只能表示继续修改草稿并交给 writer。选项3只能表示重新审稿并交给 reviewer。禁止把选项2或3解释为 final_writer、final-output.md、正式版修订或发布。仅输出5行：第1行=草稿审核已通过，当前仍在草稿阶段，请确认下一步。第2-5行依次=1. 生成正式版文章 / 2. 继续改稿（带上修改意见，小幅修改） / 3. 重新审稿（带上修改意见，较大变更） / 4. 退出当前项目。禁止输出成稿完成、#、标题、正文、final-output.md。",
-].join("\n");
-
-const STEP_8_MAIN_MESSAGE = [
-  "Auto supervisor dispatch.",
-  "Project root: {{projectDir}}",
-  "Current step: step_8_final_article",
-  "Read status.md, final-output.md, and draft_review_history.md.",
-  "当前仍处于正式稿步骤，不是草稿步骤。选项1是唯一允许发布的入口。选项2只能表示继续修改正式稿并交给 final_writer。选项3只能表示重新审稿正式稿并交给 reviewer。禁止把选项2或3解释为 writer、output.md、草稿改写或回到草稿步骤。",
-  "开头使用：正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
-  "回复必须包含 final-output.md 的正式版全文。",
-  "在全文后只显示这个菜单：1. 确认文章 OK 2. 继续修改正式稿（带上修改意见，小幅修改） 3. 重新审稿正式稿（带上修改意见，较大变更） 4. 退出当前项目。",
-  "Do not summarize the article or expose raw internal step codes.",
-].join("\n");
-
 function fill(template, projectDir) {
   return template.replaceAll("{{projectDir}}", projectDir);
 }
@@ -367,9 +337,106 @@ function latestFinalReviewContractFeedback(projectDir) {
 function extractMarkdownSection(text, heading) {
   const escaped = String(heading || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = String(text || "").match(
-    new RegExp(`(?:^|\\n)###\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n###\\s+|\\n##\\s+|$)`, "i"),
+    new RegExp(`(?:^|\\n)#{2,3}\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n#{2,3}\\s+|$)`, "i"),
   );
   return match ? match[1].trim() : "";
+}
+
+function parseCsvField(value) {
+  return String(value || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function extractBoundSourcePacks(projectText) {
+  const section = extractMarkdownSection(projectText, "Bound source packs");
+  if (!section) return [];
+  return section
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("-"))
+    .map((line) => {
+      const fields = Object.fromEntries(
+        parseHeaderPairs(line).map(([key, value]) => [key, normalizeFieldValue(value)])
+      );
+      const packId = String(fields.pack_id || "").trim();
+      if (!packId) return null;
+      return {
+        packId,
+        packPath: `/.openclaw/shared/source-packs/${packId}/PACK.md`,
+        sections: parseCsvField(fields.sections),
+        roles: parseCsvField(fields.roles).map((role) => role.toLowerCase()),
+      };
+    })
+    .filter(Boolean);
+}
+
+function boundSourcePacksForRole(projectDir, role) {
+  const wantedRole = String(role || "").trim().toLowerCase();
+  return extractBoundSourcePacks(readProjectText(projectDir, "project.md")).filter((pack) =>
+    pack.roles.length === 0 || pack.roles.includes(wantedRole)
+  );
+}
+
+function buildSourcePackMenuHint(projectDir) {
+  const packs = extractBoundSourcePacks(readProjectText(projectDir, "project.md"));
+  return packs.length
+    ? `附加命令：素材包（已绑定：${packs.map((pack) => pack.packId).join(", ")}）`
+    : "附加命令：素材包（当前未绑定）";
+}
+
+function buildSourcePackReadInstructions(projectDir, role) {
+  const packs = boundSourcePacksForRole(projectDir, role);
+  if (!packs.length) return "";
+  return [
+    `Bound source packs for ${role}:`,
+    ...packs.map((pack) =>
+      `- pack_id=${pack.packId} | pack=${pack.packPath} | sections=${pack.sections.join(",") || "(all)"}`
+    ),
+    "Before the task, for each bound pack above read PACK.md first, then the GUIDE.md files for the bound sections, then every ordered file listed by those GUIDE.md files. Do not skip or partially read any listed file.",
+    `Then append one markdown source-pack-read block to draft_review_history.md with these exact fields: role=${role}, type=source_pack_read, pack_id=..., sections=..., files=..., read_fail_or_none=....`,
+  ].join("\n");
+}
+
+function buildStep5MainMessage(ctx) {
+  const hint = buildSourcePackMenuHint(ctx.projectDir);
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_5_debate",
+    "Read status.md and project.md.",
+    "只回复：本轮对垒已完成。",
+    "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读 3. 退出当前项目。",
+    `在菜单后追加这一行：${hint}`,
+    "Do not summarize or repeat sentinel/reviewer arguments.",
+  ].join("\n");
+}
+
+function buildStep7MainMessage(ctx) {
+  const hint = buildSourcePackMenuHint(ctx.projectDir);
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_7_drafting",
+    "Read project.md, status.md, output.md, and draft_review_history.md.",
+    `Ignore all prior session context. Use only project.md, status.md, output.md, draft_review_history.md from ${ctx.projectDir}. 当前仍处于草稿写作步骤，不是正式版步骤。选项1是唯一允许进入 final_writer / final-output.md 的入口。选项2只能表示继续修改草稿并交给 writer。选项3只能表示重新审稿并交给 reviewer。禁止把选项2或3解释为 final_writer、final-output.md、正式版修订或发布。仅输出6行：第1行=草稿审核已通过，当前仍在草稿阶段，请确认下一步。第2-5行依次=1. 生成正式版文章 / 2. 继续改稿（带上修改意见，小幅修改） / 3. 重新审稿（带上修改意见，较大变更） / 4. 退出当前项目。第6行=${hint}。禁止输出成稿完成、#、标题、正文、final-output.md。`,
+  ].join("\n");
+}
+
+function buildStep8MainMessage(ctx) {
+  const hint = buildSourcePackMenuHint(ctx.projectDir);
+  return [
+    "Auto supervisor dispatch.",
+    `Project root: ${ctx.projectDir}`,
+    "Current step: step_8_final_article",
+    "Read project.md, status.md, final-output.md, and draft_review_history.md.",
+    "当前仍处于正式稿步骤，不是草稿步骤。选项1是唯一允许发布的入口。选项2只能表示继续修改正式稿并交给 final_writer。选项3只能表示重新审稿正式稿并交给 reviewer。禁止把选项2或3解释为 writer、output.md、草稿改写或回到草稿步骤。",
+    "开头使用：正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
+    "回复必须包含 final-output.md 的正式版全文。",
+    `在全文后只显示这个菜单：1. 确认文章 OK 2. 继续修改正式稿（带上修改意见，小幅修改） 3. 重新审稿正式稿（带上修改意见，较大变更） 4. 退出当前项目。然后追加这一行：${hint}`,
+    "Do not summarize the article or expose raw internal step codes.",
+  ].join("\n");
 }
 
 function buildStep6AxisSnapshot(projectDir) {
@@ -394,6 +461,7 @@ function buildStep7WriterMessage(ctx) {
   const latestEditorFeedback = latestDraftWriterContractFeedback(ctx.projectDir) || "(none)";
   const latestReviewerReview = latestDraftReviewerReviewBlock(ctx.projectDir)?.raw || "(none)";
   const step6AxisSnapshot = buildStep6AxisSnapshot(ctx.projectDir);
+  const sourcePackInstructions = buildSourcePackReadInstructions(ctx.projectDir, "writer");
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
@@ -403,6 +471,7 @@ function buildStep7WriterMessage(ctx) {
     "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=writer, type=writing_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
     "If a template_id is bound, read only the bound shared template file /.openclaw/shared/templates/articles/<template_id>.md before drafting.",
     "Do not read templates from the project directory.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     "Draft or revise the article draft according to the latest handoff, review history, and Step 4 story validation recorded in interaction_log.md and materials.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory revision input and apply it before any broader rewriting.",
     "If a latest reviewer review block is pasted below, treat its MUST_FIX, RISK_POINTS, and USER_GUIDANCE as mandatory revision input and explicitly address them in the next draft.",
@@ -433,6 +502,7 @@ function buildStep7ReviewerMessage(ctx) {
   const latestEditorFeedback = finalReview
     ? latestFinalReviewContractFeedback(ctx.projectDir) || "(none)"
     : latestDraftReviewContractFeedback(ctx.projectDir) || "(none)";
+  const sourcePackInstructions = buildSourcePackReadInstructions(ctx.projectDir, "reviewer");
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
@@ -442,6 +512,7 @@ function buildStep7ReviewerMessage(ctx) {
     "Then append one markdown knowledge-read block to draft_review_history.md with these exact fields: role=reviewer, type=review_knowledge_read, sources=..., apply_points_or_none=..., read_fail_or_none=....",
     "If a template_id is bound, read only the bound shared template file /.openclaw/shared/templates/articles/<template_id>.md before review.",
     "Do not read templates from the project directory.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     "If status.review_target=final or status.final_article_ready=yes, review final-output.md; otherwise review output.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory review direction.",
     "The Step 6 axis snapshot below is the highest-priority review contract. Boundary and counterexample material may support the argument, but must not replace the primary axis.",
@@ -468,14 +539,16 @@ function buildFinalWriterMessage(ctx) {
   const latestEditorFeedback = latestFinalWriterFeedback(ctx.projectDir) || "(none)";
   const latestReviewerReview = latestFinalReviewerReview(ctx.projectDir) || "(none)";
   const revise = mode === "revise";
+  const sourcePackInstructions = buildSourcePackReadInstructions(ctx.projectDir, "final_writer");
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_8_final_article",
-    `Read status.md, handoff.md, and ${revise ? "final-output.md" : "output.md"}.`,
+    `Read project.md, status.md, handoff.md, and ${revise ? "final-output.md" : "output.md"}.`,
     revise
       ? "Use final-output.md as the only article base for this formal revision."
       : "Use output.md as the only article base for this first formal pass.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     "Write the final article in Chinese.",
     "FULL_REWRITE_REQUIRED: treat the article base as source material, not as near-final copy to lightly edit.",
     "Rewrite the whole article into a publication-grade final article: rewrite title, lead, transitions, paragraph rhythm, and ending.",
@@ -543,7 +616,7 @@ export async function tick(ctx) {
         dispatch: {
           key: `step5:${ctx.statusMtimeMs}:main:awaiting`,
           actor: "main",
-          message: fill(STEP_5_MAIN_MESSAGE, ctx.projectDir),
+          message: buildStep5MainMessage(ctx),
           afterStatusPatch: {
             workflow_mode: "manual",
             current_step: "step_5_debate",
@@ -619,7 +692,7 @@ export async function tick(ctx) {
         dispatch: {
           key: `step7:${ctx.statusMtimeMs}:main:draft`,
           actor: "main",
-          message: fill(STEP_7_MAIN_MESSAGE, ctx.projectDir),
+          message: buildStep7MainMessage(ctx),
           afterStatusPatch: {
             workflow_mode: "manual",
             current_step: "step_7_drafting",
@@ -722,7 +795,7 @@ export async function tick(ctx) {
         dispatch: {
           key: `step8:${ctx.statusMtimeMs}:main:final`,
           actor: "main",
-          message: fill(STEP_8_MAIN_MESSAGE, ctx.projectDir),
+          message: buildStep8MainMessage(ctx),
           afterStatusPatch: {
             workflow_mode: "manual",
             current_step: "step_8_final_article",
