@@ -33,6 +33,10 @@ openclaw:
   commands:
     enable_plugin: "openclaw plugins enable telegram"
   config_patch:
+    agents:
+      defaults:
+        bootstrapMaxChars: 30000
+        bootstrapTotalMaxChars: 200000
     tools:
       profile: "coding"
     gateway:
@@ -85,6 +89,12 @@ openclaw:
       - path: "openclaw.json"
         content: |
           {
+            "agents": {
+              "defaults": {
+                "bootstrapMaxChars": 30000,
+                "bootstrapTotalMaxChars": 200000
+              }
+            },
             "tools": {
               "profile": "coding"
             },
