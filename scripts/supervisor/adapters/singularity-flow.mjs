@@ -515,6 +515,7 @@ function buildStep7ReviewerMessage(ctx) {
     "If a template_id is bound, read only the bound shared template file /.openclaw/shared/templates/articles/<template_id>.md before review.",
     "Do not read templates from the project directory.",
     ...(sourcePackInstructions ? [sourcePackInstructions] : []),
+    `Ignore all prior session context. Use only project.md, status.md, handoff.md, output.md, final-output.md, and draft_review_history.md from ${ctx.projectDir}. This dispatch is editorial review only, not Step 5 debate, not active-project menu routing, and not generic chat. Do not output 1/2/3 menus, status-only notes, or debate continuation text.`,
     "If status.review_target=final or status.final_article_ready=yes, review final-output.md; otherwise review output.md.",
     "If a latest editor feedback block is pasted below, treat it as mandatory review direction.",
     "The Step 6 axis snapshot below is the highest-priority review contract. Boundary and counterexample material may support the argument, but must not replace the primary axis.",

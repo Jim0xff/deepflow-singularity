@@ -846,6 +846,8 @@ describe("singularity supervisor adapter", () => {
     );
     expect(result.dispatch.message).toContain("type=review_knowledge_read");
     expect(result.dispatch.message).toContain("read_fail_or_none=...");
+    expect(result.dispatch.message).toContain("Ignore all prior session context.");
+    expect(result.dispatch.message).toContain("This dispatch is editorial review only, not Step 5 debate");
     expect(result.dispatch.requireLatestVerdict).toBe(true);
   });
 
