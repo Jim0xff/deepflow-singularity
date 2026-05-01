@@ -121,7 +121,7 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
-  test("injects all bound source-pack read instructions for writer", async () => {
+  test("does not inject bound source-pack read instructions for writer", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-source-pack-writer-"));
     await writeFile(
       join(projectDir, "project.md"),
@@ -146,18 +146,17 @@ describe("singularity supervisor adapter", () => {
       },
     });
 
-    expect(result.dispatch.message).toContain("Bound source packs for writer:");
-    expect(result.dispatch.message).toContain("pack_id=black-myth-wukong-core-v1");
-    expect(result.dispatch.message).toContain("pack_id=xiyouji-shituoling-v1");
-    expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
-    expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/xiyouji-shituoling-v1/PACK.md");
-    expect(result.dispatch.message).toContain("type=source_pack_read");
-    expect(result.dispatch.message).not.toContain("sections=");
+    expect(result.dispatch.message).not.toContain("Bound source packs for writer:");
+    expect(result.dispatch.message).not.toContain("pack_id=black-myth-wukong-core-v1");
+    expect(result.dispatch.message).not.toContain("pack_id=xiyouji-shituoling-v1");
+    expect(result.dispatch.message).not.toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
+    expect(result.dispatch.message).not.toContain("/.openclaw/shared/source-packs/xiyouji-shituoling-v1/PACK.md");
+    expect(result.dispatch.message).not.toContain("type=source_pack_read");
 
     await rm(projectDir, { recursive: true, force: true });
   });
 
-  test("ignores guide field and always derives PACK.md from pack_id", async () => {
+  test("bound source packs in project do not leak into writer prompt even when guide is present", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-source-pack-ignore-guide-"));
     await writeFile(
       join(projectDir, "project.md"),
@@ -181,13 +180,13 @@ describe("singularity supervisor adapter", () => {
       },
     });
 
-    expect(result.dispatch.message).toContain("Bound source packs for writer:");
-    expect(result.dispatch.message).toContain("pack_id=black-myth-wukong-core-v1");
-    expect(result.dispatch.message).toContain(
+    expect(result.dispatch.message).not.toContain("Bound source packs for writer:");
+    expect(result.dispatch.message).not.toContain("pack_id=black-myth-wukong-core-v1");
+    expect(result.dispatch.message).not.toContain(
       "/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md"
     );
     expect(result.dispatch.message).not.toContain("/tmp/wrong-pack.md");
-    expect(result.dispatch.message).toContain("type=source_pack_read");
+    expect(result.dispatch.message).not.toContain("type=source_pack_read");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -820,8 +819,8 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.message).toContain("附加命令：素材包（已绑定：black-myth-wukong-core-v1, xiyouji-shituoling-v1）");
-    expect(result.dispatch.message).toContain("If any source packs are bound in project.md, read them before replying.");
-    expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
+    expect(result.dispatch.message).not.toContain("If any source packs are bound in project.md, read them before replying.");
+    expect(result.dispatch.message).not.toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -849,6 +848,41 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("Ignore all prior session context.");
     expect(result.dispatch.message).toContain("This dispatch is editorial review only, not Step 5 debate");
     expect(result.dispatch.requireLatestVerdict).toBe(true);
+  });
+
+  test("does not inject bound source-pack read instructions for reviewer", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-source-pack-reviewer-"));
+    await writeFile(
+      join(projectDir, "project.md"),
+      [
+        "# Project",
+        "",
+        "## Bound source packs",
+        "- pack_id=black-myth-wukong-core-v1",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const result = await tick({
+      projectDir,
+      statusMtimeMs: 1042,
+      status: {
+        workflow_mode: "auto",
+        current_step: "step_7_drafting",
+        next_actor: "reviewer",
+        review_target: "draft",
+      },
+    });
+
+    expect(result.dispatch.actor).toBe("reviewer");
+    expect(result.dispatch.message).not.toContain("Bound source packs for reviewer:");
+    expect(result.dispatch.message).not.toContain("type=source_pack_read");
+    expect(result.dispatch.message).not.toContain(
+      "/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md"
+    );
+
+    await rm(projectDir, { recursive: true, force: true });
   });
 
   test("dispatches final writer and returns to main with final-output", async () => {
@@ -887,7 +921,7 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
-  test("injects bound source-pack read instructions for final writer", async () => {
+  test("does not inject bound source-pack read instructions for final writer", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-source-pack-final-writer-"));
     await writeFile(
       join(projectDir, "project.md"),
@@ -913,9 +947,9 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.message).toContain("Read project.md, status.md, handoff.md, and output.md.");
-    expect(result.dispatch.message).toContain("Bound source packs for final_writer:");
-    expect(result.dispatch.message).toContain("pack_id=black-myth-wukong-core-v1");
-    expect(result.dispatch.message).toContain("type=source_pack_read");
+    expect(result.dispatch.message).not.toContain("Bound source packs for final_writer:");
+    expect(result.dispatch.message).not.toContain("pack_id=black-myth-wukong-core-v1");
+    expect(result.dispatch.message).not.toContain("type=source_pack_read");
 
     await rm(projectDir, { recursive: true, force: true });
   });
