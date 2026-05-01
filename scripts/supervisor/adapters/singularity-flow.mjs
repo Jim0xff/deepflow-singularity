@@ -342,13 +342,6 @@ function extractMarkdownSection(text, heading) {
   return match ? match[1].trim() : "";
 }
 
-function parseCsvField(value) {
-  return String(value || "")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
 function extractBoundSourcePacks(projectText) {
   const section = extractMarkdownSection(projectText, "Bound source packs");
   if (!section) return [];
@@ -365,47 +358,52 @@ function extractBoundSourcePacks(projectText) {
       return {
         packId,
         packPath: `/.openclaw/shared/source-packs/${packId}/PACK.md`,
-        sections: parseCsvField(fields.sections),
-        roles: parseCsvField(fields.roles).map((role) => role.toLowerCase()),
       };
     })
     .filter(Boolean);
 }
 
-function boundSourcePacksForRole(projectDir, role) {
-  const wantedRole = String(role || "").trim().toLowerCase();
-  return extractBoundSourcePacks(readProjectText(projectDir, "project.md")).filter((pack) =>
-    pack.roles.length === 0 || pack.roles.includes(wantedRole)
-  );
+function boundSourcePacks(projectDir) {
+  return extractBoundSourcePacks(readProjectText(projectDir, "project.md"));
 }
 
 function buildSourcePackMenuHint(projectDir) {
-  const packs = extractBoundSourcePacks(readProjectText(projectDir, "project.md"));
+  const packs = boundSourcePacks(projectDir);
   return packs.length
     ? `附加命令：素材包（已绑定：${packs.map((pack) => pack.packId).join(", ")}）`
     : "附加命令：素材包（当前未绑定）";
 }
 
 function buildSourcePackReadInstructions(projectDir, role) {
-  const packs = boundSourcePacksForRole(projectDir, role);
+  const packs = boundSourcePacks(projectDir);
   if (!packs.length) return "";
   return [
     `Bound source packs for ${role}:`,
-    ...packs.map((pack) =>
-      `- pack_id=${pack.packId} | pack=${pack.packPath} | sections=${pack.sections.join(",") || "(all)"}`
-    ),
-    "Before the task, for each bound pack above read PACK.md first, then the GUIDE.md files for the bound sections, then every ordered file listed by those GUIDE.md files. Do not skip or partially read any listed file.",
-    `Then append one markdown source-pack-read block to draft_review_history.md with these exact fields: role=${role}, type=source_pack_read, pack_id=..., sections=..., files=..., read_fail_or_none=....`,
+    ...packs.map((pack) => `- pack_id=${pack.packId} | pack=${pack.packPath}`),
+    "Before the task, for each bound pack above read PACK.md first, then the single GUIDE.md declared by PACK.md, then every ordered file listed by GUIDE.md. Do not skip or partially read any listed file.",
+    `Then append one markdown source-pack-read block to draft_review_history.md with these exact fields: role=${role}, type=source_pack_read, pack_id=..., files=..., read_fail_or_none=....`,
+  ].join("\n");
+}
+
+function buildMainSourcePackReadInstructions(projectDir) {
+  const packs = boundSourcePacks(projectDir);
+  if (!packs.length) return "";
+  return [
+    "If any source packs are bound in project.md, read them before replying.",
+    ...packs.map((pack) => `- pack_id=${pack.packId} | pack=${pack.packPath}`),
+    "For each bound pack, read PACK.md first, then the single GUIDE.md declared by PACK.md, then every ordered file listed by GUIDE.md. Do not skip or partially read any listed file.",
   ].join("\n");
 }
 
 function buildStep5MainMessage(ctx) {
   const hint = buildSourcePackMenuHint(ctx.projectDir);
+  const sourcePackInstructions = buildMainSourcePackReadInstructions(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_5_debate",
     "Read status.md and project.md.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     "只回复：本轮对垒已完成。",
     "然后只显示这个菜单：1. 继续一轮对垒 2. 进入 Step 6 升级解读 3. 退出当前项目。",
     `在菜单后追加这一行：${hint}`,
@@ -415,22 +413,26 @@ function buildStep5MainMessage(ctx) {
 
 function buildStep7MainMessage(ctx) {
   const hint = buildSourcePackMenuHint(ctx.projectDir);
+  const sourcePackInstructions = buildMainSourcePackReadInstructions(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_7_drafting",
     "Read project.md, status.md, output.md, and draft_review_history.md.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     `Ignore all prior session context. Use only project.md, status.md, output.md, draft_review_history.md from ${ctx.projectDir}. 当前仍处于草稿写作步骤，不是正式版步骤。选项1是唯一允许进入 final_writer / final-output.md 的入口。选项2只能表示继续修改草稿并交给 writer。选项3只能表示重新审稿并交给 reviewer。禁止把选项2或3解释为 final_writer、final-output.md、正式版修订或发布。仅输出6行：第1行=草稿审核已通过，当前仍在草稿阶段，请确认下一步。第2-5行依次=1. 生成正式版文章 / 2. 继续改稿（带上修改意见，小幅修改） / 3. 重新审稿（带上修改意见，较大变更） / 4. 退出当前项目。第6行=${hint}。禁止输出成稿完成、#、标题、正文、final-output.md。`,
   ].join("\n");
 }
 
 function buildStep8MainMessage(ctx) {
   const hint = buildSourcePackMenuHint(ctx.projectDir);
+  const sourcePackInstructions = buildMainSourcePackReadInstructions(ctx.projectDir);
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_8_final_article",
     "Read project.md, status.md, final-output.md, and draft_review_history.md.",
+    ...(sourcePackInstructions ? [sourcePackInstructions] : []),
     "当前仍处于正式稿步骤，不是草稿步骤。选项1是唯一允许发布的入口。选项2只能表示继续修改正式稿并交给 final_writer。选项3只能表示重新审稿正式稿并交给 reviewer。禁止把选项2或3解释为 writer、output.md、草稿改写或回到草稿步骤。",
     "开头使用：正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
     "回复必须包含 final-output.md 的正式版全文。",

@@ -96,7 +96,7 @@ READ_BOUND_TEMPLATE_SCOPE = SINGLE_BOUND_SHARED_FILE
 DO_NOT_READ_TEMPLATE_FROM_PROJECT_DIRECTORY = TRUE
 IF_TEMPLATE_ID_MISSING = DO_NOT_BLOCK_DRAFTING
 IF_TEMPLATE_ID_MISSING = MAY_REMIND_EDITOR_TO_FIND_A_REFERENCE_ARTICLE_ONLINE_AND_SAVE_IT_AS_TEMPLATE
-SP_READ_TX = IF_BOUND_FOR_ROLE->READ(PACK.md)->READ(SECTION_GUIDE.md)->READ(ORDERED_FILES)->APPEND_DRH(type=source_pack_read,pack_id,sections,files,read_fail_or_none)
+SP_READ_TX = IF_BOUND->READ(PACK.md)->READ(GUIDE.md)->READ(ORDERED_FILES)->APPEND_DRH(type=source_pack_read,pack_id,files,read_fail_or_none)
 SP_RULE = FULL_READ_BEFORE_TASK+NO_SKIP+NO_PARTIAL+PROJECT_MD_IS_BIND_SOURCE
 S7_OUT = output.md + draft_review_history.md
 S7_FMT = ## timestamp|role:writer|type:draft_round|target:step_7_drafting+summary:+latest_editor_feedback_applied:+changes:+draft:

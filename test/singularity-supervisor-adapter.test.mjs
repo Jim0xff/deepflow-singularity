@@ -121,7 +121,7 @@ describe("singularity supervisor adapter", () => {
     });
   });
 
-  test("injects bound source-pack read instructions for writer only when role matches", async () => {
+  test("injects all bound source-pack read instructions for writer", async () => {
     const projectDir = await mkdtemp(join(tmpdir(), "singularity-adapter-source-pack-writer-"));
     await writeFile(
       join(projectDir, "project.md"),
@@ -129,8 +129,8 @@ describe("singularity supervisor adapter", () => {
         "# Project",
         "",
         "## Bound source packs",
-        "- pack_id=black-myth-wukong-core-v1 | sections=setting,plot | roles=writer,reviewer",
-        "- pack_id=xiyouji-shituoling-v1 | sections=canon | roles=reviewer",
+        "- pack_id=black-myth-wukong-core-v1",
+        "- pack_id=xiyouji-shituoling-v1",
         "",
       ].join("\n"),
       "utf8"
@@ -148,9 +148,11 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.message).toContain("Bound source packs for writer:");
     expect(result.dispatch.message).toContain("pack_id=black-myth-wukong-core-v1");
+    expect(result.dispatch.message).toContain("pack_id=xiyouji-shituoling-v1");
     expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/xiyouji-shituoling-v1/PACK.md");
     expect(result.dispatch.message).toContain("type=source_pack_read");
-    expect(result.dispatch.message).not.toContain("pack_id=xiyouji-shituoling-v1");
+    expect(result.dispatch.message).not.toContain("sections=");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -163,7 +165,7 @@ describe("singularity supervisor adapter", () => {
         "# Project",
         "",
         "## Bound source packs",
-        "- pack_id=black-myth-wukong-core-v1 | guide=/tmp/wrong-pack.md | sections=setting,plot | roles=writer",
+        "- pack_id=black-myth-wukong-core-v1 | guide=/tmp/wrong-pack.md",
         "",
       ].join("\n"),
       "utf8"
@@ -800,8 +802,8 @@ describe("singularity supervisor adapter", () => {
         "# Project",
         "",
         "## Bound source packs",
-        "- pack_id=black-myth-wukong-core-v1 | sections=setting,plot | roles=main,writer,reviewer,final_writer",
-        "- pack_id=xiyouji-shituoling-v1 | sections=canon | roles=writer,reviewer",
+        "- pack_id=black-myth-wukong-core-v1",
+        "- pack_id=xiyouji-shituoling-v1",
         "",
       ].join("\n"),
       "utf8"
@@ -818,6 +820,8 @@ describe("singularity supervisor adapter", () => {
     });
 
     expect(result.dispatch.message).toContain("附加命令：素材包（已绑定：black-myth-wukong-core-v1, xiyouji-shituoling-v1）");
+    expect(result.dispatch.message).toContain("If any source packs are bound in project.md, read them before replying.");
+    expect(result.dispatch.message).toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -889,7 +893,7 @@ describe("singularity supervisor adapter", () => {
         "# Project",
         "",
         "## Bound source packs",
-        "- pack_id=black-myth-wukong-core-v1 | sections=setting,plot | roles=final_writer",
+        "- pack_id=black-myth-wukong-core-v1",
         "",
       ].join("\n"),
       "utf8"
