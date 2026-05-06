@@ -101,6 +101,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("/.openclaw/shared/templates/articles/<template_id>.md");
     expect(result.dispatch.message).toContain("read only the bound shared template file");
     expect(result.dispatch.message).toContain("Do not read templates from the project directory.");
+    expect(result.dispatch.message).toContain("source_pack_queries.json if present");
+    expect(result.dispatch.message).toContain("read the latest matching entries from source_pack_queries.json first");
+    expect(result.dispatch.message).toContain("Do not read raw source-pack files unless the block explicitly requires raw source-pack reading.");
     expect(result.dispatch.suppressDelivery).toBeUndefined();
     expect(result.dispatch.deliverFromChangedFile).toBe("output.md");
     expect(result.dispatch.deliverChangedFileMode).toBe("full_text");
@@ -152,6 +155,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).not.toContain("/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md");
     expect(result.dispatch.message).not.toContain("/.openclaw/shared/source-packs/xiyouji-shituoling-v1/PACK.md");
     expect(result.dispatch.message).not.toContain("type=source_pack_read");
+    expect(result.dispatch.message).toContain("source_pack_queries.json if present");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -848,7 +852,13 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("type=review_knowledge_read");
     expect(result.dispatch.message).toContain("read_fail_or_none=...");
     expect(result.dispatch.message).toContain("Ignore all prior session context.");
+    expect(result.dispatch.message).toContain(
+      "Use only project.md, status.md, handoff.md, output.md, final-output.md, draft_review_history.md, and source_pack_queries.json"
+    );
     expect(result.dispatch.message).toContain("This dispatch is editorial review only, not Step 5 debate");
+    expect(result.dispatch.message).toContain("source_pack_queries.json if present");
+    expect(result.dispatch.message).toContain("read the latest matching entries from source_pack_queries.json first");
+    expect(result.dispatch.message).toContain("Do not read raw source-pack files unless the block explicitly requires raw source-pack reading.");
     expect(result.dispatch.requireLatestVerdict).toBe(true);
   });
 
@@ -883,6 +893,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).not.toContain(
       "/.openclaw/shared/source-packs/black-myth-wukong-core-v1/PACK.md"
     );
+    expect(result.dispatch.message).toContain("source_pack_queries.json if present");
 
     await rm(projectDir, { recursive: true, force: true });
   });
@@ -902,6 +913,9 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.actor).toBe("final_writer");
     expect(result.dispatch.key).toBe("step8:106:final_writer:main");
     expect(result.dispatch.message).toContain("Use output.md as the only article base");
+    expect(result.dispatch.message).toContain("source_pack_queries.json if present");
+    expect(result.dispatch.message).toContain("read the latest matching entries from source_pack_queries.json first");
+    expect(result.dispatch.message).toContain("Do not read raw source-pack files unless the block explicitly requires raw source-pack reading.");
     expect(result.dispatch.message).toContain("FULL_REWRITE_REQUIRED");
     expect(result.dispatch.message).toContain("Rewrite the whole article into a publication-grade final article");
     expect(result.dispatch.message).toContain("Latest final-stage editor feedback block:");
@@ -948,7 +962,7 @@ describe("singularity supervisor adapter", () => {
       },
     });
 
-    expect(result.dispatch.message).toContain("Read project.md, status.md, handoff.md, and output.md.");
+    expect(result.dispatch.message).toContain("Read project.md, status.md, handoff.md, output.md, and source_pack_queries.json if present.");
     expect(result.dispatch.message).not.toContain("Bound source packs for final_writer:");
     expect(result.dispatch.message).not.toContain("pack_id=black-myth-wukong-core-v1");
     expect(result.dispatch.message).not.toContain("type=source_pack_read");

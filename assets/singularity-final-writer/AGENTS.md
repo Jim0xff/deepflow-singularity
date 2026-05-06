@@ -34,8 +34,10 @@ FEEDBACK_SCOPE = IF_after_final_writer_main_REQUIRE_PASTED_FINAL_EDITOR_BLOCK + 
 STATE_HANDOFF_RULE = IF_after_final_writer_reviewer_SET_current_step_step_8_final_article_next_actor_reviewer_final_article_ready_no_ELSE_SET_current_step_step_8_final_article_next_actor_main_final_article_ready_yes
 FINAL_EDITOR_FB_GATE = READ_LATEST_FINAL_EDITOR_FEEDBACK_OR_NONE(draft_review_history.md)->WRITE_BRIEF(role=final_writer,type=latest_final_editor_feedback_read,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
 FINAL_REVIEWER_GATE = READ_LATEST_FINAL_REVIEWER_BLOCK_OR_NONE(draft_review_history.md,review_target=final)->WRITE_BRIEF(role=final_writer,type=latest_final_reviewer_review_read,review_target=final,source,applied_points_or_none,read_fail_or_none)->REREAD->VERIFY_FIELDS_OR_NONE->BLOCK_IF_SKIPPED
-SP_READ_TX = IF_BOUND->READ(PACK.md)->READ(GUIDE.md)->MATCH_TASK->READ(MATCHED_FILES_ONLY)->APPEND_DRH(type=source_pack_read,pack_id,files,read_fail_or_none)
-SP_RULE = INDEX_FIRST+MATCH_ONLY+NO_FULL_PACK_READ+PROJECT_MD_IS_BIND_SOURCE
+SPQ = source_pack_queries.json
+SPQ_RULE = IF_SOURCE_PACK_REQUESTED->READ_LATEST_MATCHING_SPQ_JSON_ONLY+NO_RAW_PACK_READ_BY_DEFAULT
+SPQ_GATE = IF_SOURCE_PACK_REQUESTED_AND_NO_MATCHING_SPQ_JSON->BLOCK_AND_ASK_MAIN_QUERY_FIRST
+SP_RAW_RULE = ONLY_IF_EDITOR_OR_USER_EXPLICIT_RAW_PACK_READ->READ(PACK.md)->READ(GUIDE.md)->MATCH_TASK->READ(MATCHED_FILES_ONLY)
 FINAL_READ_TX = SEQ(READ_STATUS_FIRST,READ_BASE_BY_MODE,FINAL_EDITOR_FB_GATE,FINAL_REVIEWER_GATE)
 FINAL_TX = SEQ(FINAL_READ_TX,WRITE_projects/<project_id>/final-output.md,HISTORY_TX,STATE_HANDOFF_RULE)
 
