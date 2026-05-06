@@ -276,6 +276,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("员工智力资产的收益权与退出权");
     expect(result.dispatch.message).toContain("不得把安全场景写成文章主线");
     expect(result.dispatch.message).toContain("Keep counterexamples and boundary materials as supporting limits only");
+    expect(result.dispatch.message).toContain("Keep the entire existing file unchanged as prefix");
     expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
 
     await rm(projectDir, { recursive: true, force: true });
@@ -435,6 +436,7 @@ describe("singularity supervisor adapter", () => {
     expect(result.dispatch.message).toContain("Step 6 axis snapshot:");
     expect(result.dispatch.message).toContain("智力资产蒸馏导致主动性塌缩与创新下降");
     expect(result.dispatch.message).toContain("boundary material overtakes the Step 6 primary axis");
+    expect(result.dispatch.message).toContain("Keep the entire existing file unchanged as prefix");
     expect(result.dispatch.message).not.toContain("旧意见：轻微顺稿。");
 
     await rm(projectDir, { recursive: true, force: true });
