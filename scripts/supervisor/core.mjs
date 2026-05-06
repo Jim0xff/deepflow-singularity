@@ -28,6 +28,7 @@ import {
   applyNonRecoverableDispatchFailure,
   applyRecoverableDispatchFailure,
   clearDispatchFailure,
+  compactProjectHistoriesBeforeDispatch,
   dispatchRecoveryPlan,
   hasNoReplySignal,
   hasTransientDispatchFailureSignal,
@@ -631,6 +632,42 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
           };
           const dispatchStartedAt = new Date();
           const dispatchStartedAtIso = dispatchStartedAt.toISOString();
+          try {
+            const historyCompaction = compactProjectHistoriesBeforeDispatch(projectDir, actor, dispatchStartedAt);
+            if (historyCompaction?.files?.length) {
+              const compactedFiles = historyCompaction.files.map((file) => ({
+                file: file.file,
+                before_bytes: file.beforeBytes,
+                after_bytes: file.afterBytes,
+                archive_path: file.archiveRelativePath,
+                archived_units: file.archivedUnits,
+                kept_units: file.keptUnits,
+              }));
+              logWatchEvent(projectDir, "history_compacted", {
+                actor,
+                dispatch_key: dispatchKey,
+                compacted_at: historyCompaction.compactedAt,
+                before: historyCompaction.before,
+                after: historyCompaction.after,
+                files: compactedFiles,
+              });
+              appendDispatchHistory(projectDir, {
+                event: "history_compacted",
+                dispatch_key: dispatchKey,
+                actor,
+                compacted_at: historyCompaction.compactedAt,
+                before: historyCompaction.before,
+                after: historyCompaction.after,
+                files: compactedFiles,
+              });
+            }
+          } catch (error) {
+            logWatchEvent(projectDir, "history_compaction_failed", {
+              actor,
+              dispatch_key: dispatchKey,
+              error: String(error?.message || error || "unknown_history_compaction_error"),
+            });
+          }
           const { paths: resumeSignalPaths, snapshot: resumeSignals } = snapshotDispatchResumeSignals(
             projectDir,
             result.dispatch,

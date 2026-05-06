@@ -5,6 +5,7 @@ import {
   canPromoteChangedFileDispatch,
   chunkMessageText,
   clearDispatchFailure,
+  compactProjectHistoriesBeforeDispatch,
   dispatchResumeSignalPaths,
   dispatchFailureCounts,
   dispatchRecoveryPlan,
@@ -23,7 +24,7 @@ import {
   snapshotRelativeFileSignatures,
   stripLegacyActionMenu,
 } from "../scripts/supervisor/lib.mjs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -480,6 +481,75 @@ describe("supervisor dispatch dedupe", () => {
     expect(dispatchFailureCounts({ dispatch_failure_counts: [] })).toEqual({});
   });
 
+  test("compacts draft_review_history markdown-field and timestamp-style blocks", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "supervisor-compact-draft-history-"));
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      Array.from({ length: 72 }, (_, index) =>
+        index % 2 === 0
+          ? [
+              `### Round: 2026-04-${String((index % 28) + 1).padStart(2, "0")} Draft Re-review Feedback`,
+              "",
+              `- **timestamp**: 2026-04-27 14:${String(index).padStart(2, "0")}:57 UTC`,
+              "- **role**: editor",
+              "- **type**: step_7_feedback",
+              `- **instruction**: ${"x".repeat(2600)}`,
+              "",
+            ].join("\n")
+          : [
+              "---",
+              `[2026-04-27T14:${String(index).padStart(2, "0")}:57Z]`,
+              "actor: editor",
+              "type: step_7_feedback",
+              `instruction: ${"y".repeat(2600)}`,
+              "",
+            ].join("\n"),
+      ).join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "interaction_log.md"), "## interaction\n", "utf8");
+
+    const result = compactProjectHistoriesBeforeDispatch(projectDir, "writer");
+    expect(result?.files.some((file) => file.file === "draft_review_history.md")).toBe(true);
+
+    const compacted = await readFile(join(projectDir, "draft_review_history.md"), "utf8");
+    expect(compacted.startsWith("<!-- history_compacted")).toBe(true);
+    expect(Buffer.byteLength(compacted, "utf8")).toBeLessThanOrEqual(80 * 1024);
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("keeps the latest full draft_review_history block when it alone exceeds target", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "supervisor-compact-draft-latest-full-"));
+    const latestBlock = [
+      "## 2026-05-06T09:00:00Z | role: writer | type: draft_round",
+      "EDITORIAL_REVIEW:",
+      `latest huge block ${"k".repeat(110 * 1024)}`,
+    ].join("\n");
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      [
+        "## 2026-05-06T08:00:00Z | role: reviewer | type: editorial_review",
+        "older block",
+        "",
+        latestBlock,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(projectDir, "interaction_log.md"), "## interaction\n", "utf8");
+
+    const result = compactProjectHistoriesBeforeDispatch(projectDir, "writer");
+    expect(result?.files.some((file) => file.file === "draft_review_history.md")).toBe(true);
+
+    const compacted = await readFile(join(projectDir, "draft_review_history.md"), "utf8");
+    expect(compacted.startsWith("<!-- history_compacted")).toBe(true);
+    expect(compacted).toContain("## 2026-05-06T09:00:00Z | role: writer | type: draft_round");
+    expect(compacted).toContain(`latest huge block ${"k".repeat(1024)}`);
+
+    await rm(projectDir, { recursive: true, force: true });
+  });
+
   test("builds sanitized recovery session ids", () => {
     const sessionId = recoverySessionId({
       projectDir: `/tmp/projects/${"very-long-project-".repeat(20)}`,
@@ -707,6 +777,81 @@ describe("supervisor dispatch dedupe", () => {
       const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
       expect(logEntries.some((entry) => entry.kind === "message" && entry.account === "singularity-main")).toBe(true);
       expect(logEntries.some((entry) => entry.kind === "message" && /Recovered Draft/.test(entry.message))).toBe(true);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch compacts oversized history files before writer dispatch", async () => {
+    const { rootDir, projectDir, cliPath } = await createSupervisorRecoveryFixture({ nextActor: "writer" });
+    await writeFile(
+      join(projectDir, "draft_review_history.md"),
+      Array.from(
+        { length: 140 },
+        (_, index) =>
+          [
+            `## 2026-04-23T10:${String(index).padStart(2, "0")}:00Z | role: reviewer | type: editorial_review`,
+            "EDITORIAL_REVIEW:",
+            `legacy review detail ${String(index).padStart(3, "0")} ${"x".repeat(900)}`,
+            "MUST_FIX:",
+            `- fix ${"y".repeat(400)}`,
+          ].join("\n"),
+      ).join("\n\n"),
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "interaction_log.md"),
+      Array.from(
+        { length: 2200 },
+        (_, index) => `2026-04-23T10:${String(index % 60).padStart(2, "0")}:00Z | step7 | legacy log ${index} ${"z".repeat(40)}`,
+      ).join("\n"),
+      "utf8",
+    );
+
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_WRITER_EXIT_CODE: "0",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    try {
+      await waitFor(async () => {
+        const outputText = await readFile(join(projectDir, "output.md"), "utf8");
+        return outputText.includes("Recovered Draft") ? outputText : "";
+      });
+
+      const archives = await readdir(join(projectDir, "archives"));
+      expect(archives.some((name) => name.startsWith("draft_review_history."))).toBe(true);
+
+      const draftReviewHistoryText = await readFile(join(projectDir, "draft_review_history.md"), "utf8");
+      const interactionLogText = await readFile(join(projectDir, "interaction_log.md"), "utf8");
+      expect(draftReviewHistoryText.startsWith("<!-- history_compacted")).toBe(true);
+      expect(interactionLogText.startsWith("<!-- history_compacted")).toBe(false);
+      expect(Buffer.byteLength(draftReviewHistoryText, "utf8")).toBeLessThanOrEqual(80 * 1024);
+
+      const dispatchHistory = parseJsonLines(await readFile(join(projectDir, "runtime", "dispatch-history.jsonl"), "utf8"));
+      const compactionEvent = dispatchHistory.find((entry) => entry.event === "history_compacted");
+      expect(compactionEvent?.actor).toBe("writer");
+      expect(compactionEvent?.files?.map((file) => file.file)).toEqual(expect.arrayContaining(["draft_review_history.md"]));
     } finally {
       await stopChild(child);
       await rm(rootDir, { recursive: true, force: true });

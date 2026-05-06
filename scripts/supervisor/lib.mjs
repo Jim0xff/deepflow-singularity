@@ -6,6 +6,14 @@ import { spawn, spawnSync } from "node:child_process";
 export const DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS = 1;
 export const DEFAULT_RETRY_DELAYS_MS = [15_000, 60_000];
 export const DEFAULT_PROBE_RETRY_DELAY_MS = 15 * 60_000;
+export const HISTORY_COMPACTION_THRESHOLDS = {
+  draftReviewHistoryBytes: 100 * 1024,
+};
+export const HISTORY_COMPACTION_TARGETS = {
+  draftReviewHistoryBytes: 72 * 1024,
+};
+
+const HISTORY_COMPACTION_ACTORS = new Set(["writer", "reviewer", "final_writer"]);
 
 export function ensureProjectDir(projectDir) {
   if (!projectDir || projectDir.startsWith("-")) {
@@ -23,6 +31,244 @@ export function ensureProjectDir(projectDir) {
 
 export function readText(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+}
+
+function textBytes(text) {
+  return Buffer.byteLength(String(text || ""), "utf8");
+}
+
+function archiveStamp(now = new Date()) {
+  return now.toISOString().replace(/[:.]/g, "-");
+}
+
+function isDraftReviewHistoryBlockStart(lines, index) {
+  const line = String(lines[index] || "").trim();
+  const next = String(lines[index + 1] || "").trim();
+  return (
+    line.startsWith("## ") ||
+    /^###\s+Round:/i.test(line) ||
+    (line === "---" && /^\[\d{4}-\d{2}-\d{2}T/.test(next))
+  );
+}
+
+function splitDraftReviewHistoryBlocks(text) {
+  const lines = String(text || "").trimEnd().split("\n");
+  const blocks = [];
+  let current = [];
+  let recognizedStarts = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const isBlockStart = isDraftReviewHistoryBlockStart(lines, index);
+    if (isBlockStart) recognizedStarts += 1;
+    if (current.length && isBlockStart) {
+      blocks.push(current.join("\n").trimEnd());
+      current = [line];
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.length) blocks.push(current.join("\n").trimEnd());
+  return {
+    blocks: blocks.map((block) => block.trim()).filter(Boolean),
+    recognizedStarts,
+  };
+}
+
+function compactNote({ source, archiveRelativePath, archivedUnits, keptUnits, unitLabel, compactedAt }) {
+  return [
+    "<!-- history_compacted",
+    `source=${source}`,
+    `archived_to=${archiveRelativePath}`,
+    `${unitLabel}_archived=${archivedUnits}`,
+    `${unitLabel}_kept=${keptUnits}`,
+    `compacted_at=${compactedAt}`,
+    "-->",
+  ].join(" ");
+}
+
+function compactToTrailingUnits(units, { targetBytes, joiner, source, archiveRelativePath, unitLabel, compactedAt }) {
+  if (!Array.isArray(units) || units.length <= 1) return null;
+
+  let bestStart = units.length - 1;
+  let bestText = "";
+  for (let start = units.length - 1; start >= 0; start -= 1) {
+    const note = compactNote({
+      source,
+      archiveRelativePath,
+      archivedUnits: start,
+      keptUnits: units.length - start,
+      unitLabel,
+      compactedAt,
+    });
+    const candidate = `${note}\n${units.slice(start).join(joiner).trim()}\n`;
+    if (textBytes(candidate) <= targetBytes) {
+      bestStart = start;
+      bestText = candidate;
+      continue;
+    }
+    break;
+  }
+
+  if (!bestText || bestStart <= 0) return null;
+  return {
+    archivedText: `${units.slice(0, bestStart).join(joiner).trim()}\n`,
+    compactedText: bestText,
+    archivedUnits: bestStart,
+    keptUnits: units.length - bestStart,
+  };
+}
+
+function compactMarkdownHistory(content, options) {
+  const blocks = splitDraftReviewHistoryBlocks(content);
+  return compactToTrailingUnits(blocks, {
+    ...options,
+    joiner: "\n\n",
+    unitLabel: "blocks",
+  });
+}
+
+function compactByTrailingBytes(content, { targetBytes, source, archiveRelativePath, compactedAt }) {
+  const value = String(content || "").trim();
+  if (!value) return null;
+
+  let bestStart = value.length;
+  let bestText = "";
+  let low = 0;
+  let high = value.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidateText = value.slice(mid).trimStart();
+    const note = compactNote({
+      source,
+      archiveRelativePath,
+      archivedUnits: textBytes(value.slice(0, mid)),
+      keptUnits: textBytes(candidateText),
+      unitLabel: "bytes",
+      compactedAt,
+    });
+    const candidate = `${note}\n${candidateText}\n`;
+    if (textBytes(candidate) <= targetBytes) {
+      bestStart = mid;
+      bestText = candidate;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+
+  if (!bestText || bestStart <= 0 || bestStart >= value.length) return null;
+  return {
+    archivedText: `${value.slice(0, bestStart).trimEnd()}\n`,
+    compactedText: bestText,
+    archivedUnits: textBytes(value.slice(0, bestStart)),
+    keptUnits: textBytes(value.slice(bestStart).trimStart()),
+  };
+}
+
+function compactDraftReviewHistory(content, options) {
+  const { blocks, recognizedStarts } = splitDraftReviewHistoryBlocks(content);
+  if (blocks.length > 1) {
+    const blockCompaction = compactToTrailingUnits(blocks, {
+          ...options,
+          joiner: "\n\n",
+          unitLabel: "blocks",
+        });
+    if (blockCompaction) return blockCompaction;
+    const latestBlock = blocks.at(-1) || "";
+    const note = compactNote({
+      source: options.source,
+      archiveRelativePath: options.archiveRelativePath,
+      archivedUnits: blocks.length - 1,
+      keptUnits: 1,
+      unitLabel: "blocks",
+      compactedAt: options.compactedAt,
+    });
+    return {
+      archivedText: `${blocks.slice(0, -1).join("\n\n").trim()}\n`,
+      compactedText: `${note}\n${latestBlock.trim()}\n`,
+      archivedUnits: blocks.length - 1,
+      keptUnits: 1,
+    };
+  }
+  if (recognizedStarts > 0) return null;
+  return compactByTrailingBytes(content, options);
+}
+
+function compactHistoryFile(filePath, { targetBytes, archiveDir, compactedAt, mode }) {
+  const content = readText(filePath);
+  const beforeBytes = textBytes(content);
+  if (!beforeBytes || beforeBytes <= targetBytes) return null;
+
+  const archiveFilename = `${path.basename(filePath, ".md")}.${archiveStamp(new Date(compactedAt))}.md`;
+  const archivePath = path.join(archiveDir, archiveFilename);
+  const archiveRelativePath = path.relative(path.dirname(filePath), archivePath).replace(/\\/g, "/");
+  const compacted =
+    mode === "markdown-blocks"
+      ? compactDraftReviewHistory(content, {
+          targetBytes,
+          source: path.basename(filePath),
+          archiveRelativePath,
+          compactedAt,
+        })
+      : null;
+  if (!compacted?.archivedText || !compacted.compactedText) return null;
+
+  fs.mkdirSync(archiveDir, { recursive: true });
+  fs.writeFileSync(archivePath, compacted.archivedText, "utf8");
+  fs.writeFileSync(filePath, compacted.compactedText, "utf8");
+  return {
+    file: path.basename(filePath),
+    beforeBytes,
+    afterBytes: textBytes(compacted.compactedText),
+    archivePath,
+    archiveRelativePath,
+    archivedUnits: compacted.archivedUnits,
+    keptUnits: compacted.keptUnits,
+  };
+}
+
+export function compactProjectHistoriesBeforeDispatch(projectDir, actor, now = new Date()) {
+  if (!HISTORY_COMPACTION_ACTORS.has(String(actor || "").trim())) return null;
+
+  const draftReviewHistoryPath = path.join(projectDir, "draft_review_history.md");
+  const interactionLogPath = path.join(projectDir, "interaction_log.md");
+  const before = {
+    draftReviewHistoryBytes: textBytes(readText(draftReviewHistoryPath)),
+  };
+
+  const shouldCompact = before.draftReviewHistoryBytes > HISTORY_COMPACTION_THRESHOLDS.draftReviewHistoryBytes;
+  if (!shouldCompact) return null;
+
+  const compactedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+  const archiveDir = path.join(projectDir, "archives");
+  const files = [];
+
+  const draftReviewHistoryResult =
+    before.draftReviewHistoryBytes > HISTORY_COMPACTION_THRESHOLDS.draftReviewHistoryBytes
+      ? compactHistoryFile(draftReviewHistoryPath, {
+          targetBytes: HISTORY_COMPACTION_TARGETS.draftReviewHistoryBytes,
+          archiveDir,
+          compactedAt,
+          mode: "markdown-blocks",
+        })
+      : null;
+  if (draftReviewHistoryResult) files.push(draftReviewHistoryResult);
+
+  if (!files.length) return null;
+
+  const after = {
+    draftReviewHistoryBytes: textBytes(readText(draftReviewHistoryPath)),
+  };
+
+  return {
+    actor: String(actor || "").trim(),
+    compactedAt,
+    before,
+    after,
+    files,
+  };
 }
 
 export function readJson(filePath, fallback = {}) {
