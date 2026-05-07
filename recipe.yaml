@@ -7,7 +7,7 @@ params:
   agent_model:
     default: "openai/gpt-5.3-codex"
   writer_model:
-    default: "google/gemini-3.1-pro-preview"
+    default: "openai/gpt-5.3-codex"
   final_writer_model:
     default: "google/gemini-3.1-pro-preview"
   singularity_main_telegram_bot_key:
