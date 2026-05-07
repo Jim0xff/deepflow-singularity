@@ -95,6 +95,16 @@ openclaw:
                 "bootstrapTotalMaxChars": 200000
               }
             },
+            "channels": {
+              "telegram": {
+                "groupPolicy": "open",
+                "accounts": {
+                  "default": {
+                    "groupPolicy": "open"
+                  }
+                }
+              }
+            },
             "tools": {
               "profile": "coding"
             },
