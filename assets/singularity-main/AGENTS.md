@@ -139,9 +139,11 @@ TEMPLATE_RULE=STEP6_OPTION1_IS_ENTRY+IF_template_id_EXISTS->TELL_WRITER_READ+IF_
 WRITE_RULE=STEP7_FEEDBACK->DRH_ONLY
 FMT=S7W:## timestamp|role:editor|type:step_7_feedback|target:writer+S7R:## timestamp|role:editor|type:step_7_feedback|target:reviewer+S7B:instruction:
 REPLY_RULE=ON_ENTER_SAY_AUTO_WRITER_STARTED_ONLY+DRAFT_APPROVAL_NO_ARTICLE_OUTPUT
-DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)+DRHS
-DW=SEQ(DFB(target=writer),SET(auto,current_step=step_7_drafting,next_actor=writer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=))
-DR=SEQ(DFB(target=reviewer),SET(auto,current_step=step_7_drafting,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=))
+DFB=WRITE_FEEDBACK_ONLY(target=writer_or_reviewer)+DRHS+REREAD_DRH
+W7S=SET(auto,current_step=step_7_drafting,next_actor=writer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=)+VERIFY(ST.current_step=step_7_drafting&ST.workflow_mode=auto&ST.next_actor=writer&ST.awaiting_user_choice=no&ST.review_target=draft)
+R7S=SET(auto,current_step=step_7_drafting,next_actor=reviewer,awaiting_user_choice=no,review_target=draft,after_final_writer=,final_article_ready=no,final_writer_mode=)+VERIFY(ST.current_step=step_7_drafting&ST.workflow_mode=auto&ST.next_actor=reviewer&ST.awaiting_user_choice=no&ST.review_target=draft)
+DW=SEQ(DFB(target=writer),W7S)
+DR=SEQ(DFB(target=reviewer),R7S)
 FG=SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=generate)
 D=ASSERT_SCOPE(step_7_menu)
 MENU_RULE=step_7_menu:1=step8_final_writer_generate+2=writer+3=reviewer+4=exit
@@ -155,10 +157,12 @@ FORBIDDEN=ROUTE_BY_TEXT_SEMANTICS+ROUTE_BY_WORDS(title|正式版|publish|final-o
 ROLE_RULE=M78+final_writer->FOUT+reviewer->DRH
 WRITE_RULE=STEP8_FEEDBACK->DRH_ONLY
 FMT=S8F:## timestamp|role:editor|type:step_8_feedback|target:final_writer|mode:revise+S8R:## timestamp|role:editor|type:step_8_feedback|target:reviewer|review_target:final+S8B:instruction:
-FFB=WRITE_FINAL_EDITOR_BLOCK_TO_DRH+DRHS
+FFB=WRITE_FINAL_EDITOR_BLOCK_TO_DRH+DRHS+REREAD_DRH
 PUB=SET(docs_publish_requested=yes,docs_publish_state=pending)+MENU_final_delivery_menu+KEEP_PROJECT
-FW=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise))
-FR=SEQ(FFB,SET(auto,current_step=step_8_final_article,next_actor=reviewer,awaiting_user_choice=no,after_final_writer=,final_article_ready=no,review_target=final,final_writer_mode=))
+F8S=SET(auto,current_step=step_8_final_article,next_actor=final_writer,awaiting_user_choice=no,after_final_writer=main,final_article_ready=no,review_target=final,final_writer_mode=revise)+VERIFY(ST.current_step=step_8_final_article&ST.workflow_mode=auto&ST.next_actor=final_writer&ST.awaiting_user_choice=no&ST.review_target=final&ST.final_writer_mode=revise)
+R8S=SET(auto,current_step=step_8_final_article,next_actor=reviewer,awaiting_user_choice=no,after_final_writer=,final_article_ready=no,review_target=final,final_writer_mode=)+VERIFY(ST.current_step=step_8_final_article&ST.workflow_mode=auto&ST.next_actor=reviewer&ST.awaiting_user_choice=no&ST.review_target=final)
+FW=SEQ(FFB,F8S)
+FR=SEQ(FFB,R8S)
 FA=ASSERT_SCOPE(final_article_menu)
 MENU_RULE=final_article_menu:1=publish+2=final_writer+3=reviewer+4=exit
 USER_TRIGGER_RULE=final_article_menu_2TEXT->SEQ(FA,FW)+final_article_menu_3TEXT->SEQ(FA,FR)
