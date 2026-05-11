@@ -399,18 +399,25 @@ function buildStep7MainMessage(ctx) {
   ].join("\n");
 }
 
-function buildStep8MainMessage(ctx) {
+function buildStep8MainMenuText(ctx) {
   const hint = buildSourcePackMenuHint(ctx.projectDir);
+  return [
+    "正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
+    "1. 确认文章 OK",
+    "2. 继续修改正式稿（带上修改意见，小幅修改）",
+    "3. 重新审稿正式稿（带上修改意见，较大变更）",
+    "4. 退出当前项目",
+    hint,
+  ].join("\n");
+}
+
+function buildStep8MainMessage(ctx) {
   return [
     "Auto supervisor dispatch.",
     `Project root: ${ctx.projectDir}`,
     "Current step: step_8_final_article",
-    "Read project.md, status.md, final-output.md, and draft_review_history.md.",
-    "当前仍处于正式稿步骤，不是草稿步骤。选项1是唯一允许发布的入口。选项2只能表示继续修改正式稿并交给 final_writer。选项3只能表示重新审稿正式稿并交给 reviewer。禁止把选项2或3解释为 writer、output.md、草稿改写或回到草稿步骤。",
-    "开头使用：正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
-    "回复必须包含 final-output.md 的正式版全文。",
-    `在全文后只显示这个菜单：1. 确认文章 OK 2. 继续修改正式稿（带上修改意见，小幅修改） 3. 重新审稿正式稿（带上修改意见，较大变更） 4. 退出当前项目。然后追加这一行：${hint}`,
-    "Do not summarize the article or expose raw internal step codes.",
+    "Read project.md and status.md.",
+    `Ignore all prior session context. Use only project.md and status.md from ${ctx.projectDir}. 当前仍处于正式稿步骤，不是草稿步骤。选项1是唯一允许发布的入口。选项2只能表示继续修改正式稿并交给 final_writer。选项3只能表示重新审稿正式稿并交给 reviewer。禁止把选项2或3解释为 writer、output.md、草稿改写或回到草稿步骤。仅输出6行：第1行=正式稿已生成，当前仍在正式稿阶段，请确认下一步。第2-5行依次=1. 确认文章 OK / 2. 继续修改正式稿（带上修改意见，小幅修改） / 3. 重新审稿正式稿（带上修改意见，较大变更） / 4. 退出当前项目。第6行=${buildSourcePackMenuHint(ctx.projectDir)}。禁止输出#、标题、正文、final-output.md、文章摘要。`,
   ].join("\n");
 }
 
@@ -764,6 +771,7 @@ export async function tick(ctx) {
     }
 
     if (nextActor === "main") {
+      const finalMenuText = buildStep8MainMenuText(ctx);
       return {
         delayMs: 10_000,
         runtimePatch: { last_decision: "dispatch_step8_main" },
@@ -771,6 +779,9 @@ export async function tick(ctx) {
           key: `step8:${ctx.statusMtimeMs}:main:final`,
           actor: "main",
           message: buildStep8MainMessage(ctx),
+          deliverFromChangedFile: "final-output.md",
+          deliverChangedFileMode: "full_text",
+          deliverAppendText: finalMenuText,
           afterStatusPatch: {
             workflow_mode: "manual",
             current_step: "step_8_final_article",

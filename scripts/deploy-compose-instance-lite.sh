@@ -4,34 +4,25 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  deploy-compose-instance.sh <instance> [branch]
+  deploy-compose-instance-lite.sh <instance> [branch]
 
 Behavior:
-  - On Debian/Ubuntu hosts, installs git/curl first if they are missing
-  - On Debian/Ubuntu hosts, installs Docker Engine + Compose plugin if missing
-  - Full redeploys one Docker Compose instance under /opt/deepflow-singularity/<instance>
-  - Pulls code from the existing instance checkout's origin remote when present,
-    otherwise from the caller repo's origin remote (or DEPLOY_REPO_URL)
+  - Expects an existing Docker Compose instance under /opt/deepflow-singularity/<instance>
+  - Pulls code from the existing instance checkout's origin remote by default (or DEPLOY_REPO_URL)
   - Resets code to origin/<branch>
   - Reuses the instance's existing .env by default
   - If /opt/deepflow-singularity-config/config.yaml contains environments.<instance>,
     regenerates .env from that config first
-  - Rebuilds and force-recreates the whole Docker stack
+  - Rebuilds and restarts only the deepflow-singularity service
 
 Env overrides:
   DEPLOY_BASE_DIR=/opt/deepflow-singularity
   DEPLOY_CONFIG_PATH=/opt/deepflow-singularity-config/config.yaml
   DEPLOY_REPO_URL=<git remote url>
-  DEPLOY_SKIP_NGINX=true
-  DEPLOY_PRUNE_IMAGES=true
+  DEPLOY_LIGHT_RUN_NGINX=true
   DEPLOY_NOTIFY_CHAT_ID=-1001234567890
   DEPLOY_NOTIFY_ACCOUNT=singularity-main
-  DEPLOY_NOTIFY_MESSAGE="部署完成"
-
-Config defaults:
-  environments.<instance>.deploy.notify.chat_id
-  environments.<instance>.deploy.notify.account
-  environments.<instance>.deploy.notify.message
+  DEPLOY_NOTIFY_MESSAGE="轻量部署完成"
 EOF
 }
 
@@ -50,8 +41,11 @@ run_privileged() {
   exit 1
 }
 
-apt_install() {
-  run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Required command is missing: $1" >&2
+    exit 1
+  fi
 }
 
 validate_instance_name() {
@@ -93,81 +87,6 @@ ensure_origin_remote() {
   fi
 }
 
-ensure_base_tools() {
-  local missing=()
-
-  command -v git >/dev/null 2>&1 || missing+=("git")
-  command -v curl >/dev/null 2>&1 || missing+=("curl")
-
-  if [[ "${#missing[@]}" -eq 0 ]]; then
-    return
-  fi
-
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Missing required tools (${missing[*]}) and apt-get is unavailable for automatic install." >&2
-    exit 1
-  fi
-
-  run_privileged apt-get update
-  apt_install ca-certificates "${missing[@]}"
-}
-
-install_docker() {
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Docker auto-install currently supports Debian/Ubuntu hosts with apt-get only." >&2
-    exit 1
-  fi
-
-  if [[ ! -f /etc/os-release ]]; then
-    echo "Unable to detect OS for Docker auto-install." >&2
-    exit 1
-  fi
-
-  # shellcheck disable=SC1091
-  . /etc/os-release
-
-  if [[ "${ID:-}" != "ubuntu" && "${ID:-}" != "debian" ]]; then
-    echo "Docker auto-install currently supports Ubuntu/Debian only (detected: ${ID:-unknown})." >&2
-    exit 1
-  fi
-
-  local codename="${VERSION_CODENAME:-}"
-  if [[ -z "$codename" ]]; then
-    echo "Unable to determine OS codename for Docker apt repository." >&2
-    exit 1
-  fi
-
-  local arch
-  arch="$(dpkg --print-architecture)"
-
-  run_privileged apt-get update
-  apt_install ca-certificates curl
-  run_privileged install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL "https://download.docker.com/linux/$ID/gpg" | run_privileged tee /etc/apt/keyrings/docker.asc >/dev/null
-  run_privileged chmod a+r /etc/apt/keyrings/docker.asc
-  printf "deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n" \
-    "$arch" "$ID" "$codename" \
-    | run_privileged tee /etc/apt/sources.list.d/docker.list >/dev/null
-  run_privileged apt-get update
-  apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  if command -v systemctl >/dev/null 2>&1; then
-    run_privileged systemctl enable --now docker
-  fi
-}
-
-ensure_docker() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    return
-  fi
-
-  install_docker
-
-  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-    echo "Docker install completed but docker compose is still unavailable." >&2
-    exit 1
-  fi
-}
-
 docker_cmd() {
   if docker info >/dev/null 2>&1; then
     docker "$@"
@@ -198,39 +117,39 @@ validate_instance_name "$INSTANCE"
 BASE_DIR="${DEPLOY_BASE_DIR:-/opt/deepflow-singularity}"
 CONFIG_PATH="${DEPLOY_CONFIG_PATH:-/opt/deepflow-singularity-config/config.yaml}"
 REPO_URL="${DEPLOY_REPO_URL:-}"
-SKIP_NGINX="${DEPLOY_SKIP_NGINX:-false}"
-PRUNE_IMAGES="${DEPLOY_PRUNE_IMAGES:-false}"
+LIGHT_RUN_NGINX="${DEPLOY_LIGHT_RUN_NGINX:-false}"
 NOTIFY_CHAT_ID="${DEPLOY_NOTIFY_CHAT_ID:-}"
 NOTIFY_ACCOUNT="${DEPLOY_NOTIFY_ACCOUNT:-singularity-main}"
 NOTIFY_MESSAGE="${DEPLOY_NOTIFY_MESSAGE:-}"
 TARGET_DIR="${BASE_DIR%/}/$INSTANCE"
 TARGET_ENV="$TARGET_DIR/.env"
 
-ensure_base_tools
+require_cmd git
+require_cmd curl
+require_cmd docker
 
-mkdir -p "$BASE_DIR"
+if ! docker compose version >/dev/null 2>&1; then
+  echo "docker compose plugin is required for lightweight deploy." >&2
+  exit 1
+fi
+
+if [[ ! -d "$TARGET_DIR/.git" ]]; then
+  echo "Missing existing instance checkout: $TARGET_DIR/.git" >&2
+  echo "Use the full deploy flow first, then run the lightweight deploy API." >&2
+  exit 1
+fi
 
 if [[ -z "$REPO_URL" ]]; then
   REPO_URL="$(resolve_origin_remote "$TARGET_DIR")"
 fi
 
 if [[ -z "$REPO_URL" ]]; then
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    REPO_URL="$(git config --get remote.origin.url 2>/dev/null || true)"
-  fi
-fi
-
-if [[ -z "$REPO_URL" ]]; then
-  echo "Unable to determine deploy source; configure origin or set DEPLOY_REPO_URL." >&2
+  echo "Unable to determine deploy source from $TARGET_DIR/.git; set DEPLOY_REPO_URL." >&2
   exit 1
 fi
 
 validate_git_remote_url "$REPO_URL"
 HAS_CONFIG_ENV=false
-
-if [[ ! -d "$TARGET_DIR/.git" ]]; then
-  git clone "$REPO_URL" "$TARGET_DIR"
-fi
 
 git config --global --add safe.directory "$TARGET_DIR" >/dev/null 2>&1 || true
 
@@ -268,16 +187,11 @@ if [[ ! -f "$TARGET_ENV" ]]; then
   exit 1
 fi
 
-ensure_docker
+# 轻量模式只重建并重启 deepflow-singularity 服务，不触碰其它 compose 资源。
+docker_compose_cmd -p "$INSTANCE" up -d --build --no-deps deepflow-singularity
 
-docker_compose_cmd -p "$INSTANCE" up -d --build --force-recreate --remove-orphans
-
-if [[ "$SKIP_NGINX" != "true" && "$HAS_CONFIG_ENV" == "true" ]]; then
+if [[ "$LIGHT_RUN_NGINX" == "true" && "$HAS_CONFIG_ENV" == "true" ]]; then
   "$TARGET_DIR/scripts/deploy-nginx.sh" "$INSTANCE"
-fi
-
-if [[ "$PRUNE_IMAGES" == "true" ]]; then
-  docker_cmd image prune -f
 fi
 
 APP_PORT="$(grep -E '^APP_PORT=' "$TARGET_ENV" | tail -n 1 | cut -d= -f2- || true)"
@@ -285,6 +199,7 @@ APP_PORT="$(grep -E '^APP_PORT=' "$TARGET_ENV" | tail -n 1 | cut -d= -f2- || tru
 echo "instance=$INSTANCE"
 echo "branch=$BRANCH"
 echo "target_dir=$TARGET_DIR"
+echo "deploy_mode=light"
 echo "env_mode=$([[ "$HAS_CONFIG_ENV" == "true" ]] && echo config || echo existing-env)"
 if [[ -n "$APP_PORT" ]]; then
   echo "health=http://127.0.0.1:$APP_PORT/healthz"
@@ -305,7 +220,7 @@ if [[ -n "$NOTIFY_CHAT_ID" && -n "$APP_PORT" ]]; then
   ready="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$APP_PORT/openclaw-ready" || true)"
   if [[ "$health" == "200" && "$ready" == "200" ]]; then
     if [[ -z "$NOTIFY_MESSAGE" ]]; then
-      NOTIFY_MESSAGE="部署完成，$INSTANCE 实例已就绪。"
+      NOTIFY_MESSAGE="轻量部署完成，$INSTANCE 实例已就绪。"
     fi
     docker_cmd exec \
       -e DEPLOY_NOTIFY_ACCOUNT="$NOTIFY_ACCOUNT" \

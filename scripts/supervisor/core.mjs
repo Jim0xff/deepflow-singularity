@@ -170,6 +170,7 @@ function summarizeRuntime(runtime = {}) {
     last_failure_reason: String(runtime.last_failure_reason || "").trim(),
     retry_mode: String(runtime.retry_mode || "").trim(),
     retry_attempt: Number(runtime.retry_attempt || 0) || 0,
+    probe_attempt: Number(runtime.probe_attempt || 0) || 0,
     next_retry_at: String(runtime.next_retry_at || "").trim(),
     last_recovery_action: String(runtime.last_recovery_action || "").trim(),
   };
@@ -462,7 +463,8 @@ function deliverAgentPayloads({ delivery, actor, run, dispatch, nextRuntime }) {
     const changedFileText = readText(path.join(dispatch.projectDir, dispatch.deliverFromChangedFile));
     const mode = String(dispatch.deliverChangedFileMode || "").trim().toLowerCase();
     const deliveredText = mode === "full_text" ? changedFileText.trim() : latestMarkdownBlock(changedFileText);
-    if (deliveredText) texts = [deliveredText];
+    const appendText = String(dispatch.deliverAppendText || "").trim();
+    if (deliveredText) texts = [appendText ? `${deliveredText}\n\n${appendText}` : deliveredText];
   }
   if (!texts.length) {
     nextRuntime.last_delivery_count = 0;
@@ -692,6 +694,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
               dispatchKey,
               statusMtimeMs,
               reason: `unknown_actor:${actor}`,
+              previousProbeAttempt: Number(runtime.probe_attempt || 0) || 0,
               nowIso: dispatchStartedAtIso,
               resumeSignals,
               resumeSignalPaths,
@@ -1146,6 +1149,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                       dispatchKey,
                       statusMtimeMs,
                       reason: String(nextRuntime.last_error || "delivery_failed"),
+                      previousProbeAttempt: Number(runtime.probe_attempt || 0) || 0,
                       nowIso: dispatchStartedAtIso,
                       resumeSignals,
                       resumeSignalPaths,
@@ -1172,6 +1176,7 @@ async function runWatch({ projectDir, adapterPath, pollMs, args }) {
                   dispatchKey,
                   statusMtimeMs,
                   reason: blockedDispatchFailureReason,
+                  previousProbeAttempt: Number(runtime.probe_attempt || 0) || 0,
                   nowIso: dispatchStartedAtIso,
                   resumeSignals,
                   resumeSignalPaths,

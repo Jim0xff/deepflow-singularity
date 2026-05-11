@@ -1396,8 +1396,21 @@ describe("singularity supervisor adapter", () => {
 
     expect(result.dispatch.actor).toBe("main");
     expect(result.dispatch.key).toBe("step8:108:main:final");
-    expect(result.dispatch.message).toContain("final-output.md");
+    expect(result.dispatch.message).not.toContain("回复必须包含 final-output.md 的正式版全文。");
     expect(result.dispatch.message).toContain("Current step: step_8_final_article");
+    expect(result.dispatch.message).toContain("仅输出6行");
+    expect(result.dispatch.deliverFromChangedFile).toBe("final-output.md");
+    expect(result.dispatch.deliverChangedFileMode).toBe("full_text");
+    expect(result.dispatch.deliverAppendText).toBe(
+      [
+        "正式稿已生成，当前仍在正式稿阶段，请确认下一步。",
+        "1. 确认文章 OK",
+        "2. 继续修改正式稿（带上修改意见，小幅修改）",
+        "3. 重新审稿正式稿（带上修改意见，较大变更）",
+        "4. 退出当前项目",
+        "附加命令：素材包（当前未绑定）",
+      ].join("\n")
+    );
     expect(result.dispatch.afterStatusPatch).toMatchObject({
       current_step: "step_8_final_article",
       active_menu_scope: "final_article_menu",

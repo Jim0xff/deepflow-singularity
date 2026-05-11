@@ -640,9 +640,63 @@ describe("supervisor dispatch dedupe", () => {
     expect(probePatch.dispatch_failure_counts).toEqual({ [dispatchKey]: 3 });
     expect(probePatch.last_recovery_action).toBe("entered_probe_mode_after_retryable_failure");
     expect(probePatch.retry_mode).toBe("probe");
-    expect(probePatch.retry_backoff_ms).toBe(900_000);
-    expect(probePatch.next_retry_at).toBe("2026-04-23T00:18:00.000Z");
+    expect(probePatch.retry_backoff_ms).toBe(0);
+    expect(probePatch.probe_attempt).toBe(1);
+    expect(probePatch.next_retry_at).toBe("2026-04-23T00:03:00.000Z");
     expect(probePatch.last_dispatch_key).toBe(dispatchKey);
+  });
+
+  test("recoverable probe retries run on the next tick for the first three probe attempts, then switch to 15 minutes", () => {
+    const dispatchKey = "step7:100:writer";
+    const statusMtimeMs = 100;
+
+    const firstProbePatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: firstProbePatch,
+      failureCounts: {},
+      dispatchKey,
+      previousFailureCount: 2,
+      recoverySession: "",
+      statusMtimeMs,
+      nowIso: "2026-04-23T00:03:00.000Z",
+      reason: "no_reply",
+    });
+    expect(firstProbePatch.retry_mode).toBe("probe");
+    expect(firstProbePatch.probe_attempt).toBe(1);
+    expect(firstProbePatch.retry_backoff_ms).toBe(0);
+    expect(firstProbePatch.next_retry_at).toBe("2026-04-23T00:03:00.000Z");
+
+    const thirdProbePatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: thirdProbePatch,
+      failureCounts: {},
+      dispatchKey,
+      previousFailureCount: 4,
+      recoverySession: "",
+      statusMtimeMs,
+      nowIso: "2026-04-23T00:09:00.000Z",
+      reason: "no_reply",
+    });
+    expect(thirdProbePatch.retry_mode).toBe("probe");
+    expect(thirdProbePatch.probe_attempt).toBe(3);
+    expect(thirdProbePatch.retry_backoff_ms).toBe(0);
+    expect(thirdProbePatch.next_retry_at).toBe("2026-04-23T00:09:00.000Z");
+
+    const fourthProbePatch = {};
+    applyRecoverableDispatchFailure({
+      runtimePatch: fourthProbePatch,
+      failureCounts: {},
+      dispatchKey,
+      previousFailureCount: 5,
+      recoverySession: "",
+      statusMtimeMs,
+      nowIso: "2026-04-23T00:12:00.000Z",
+      reason: "no_reply",
+    });
+    expect(fourthProbePatch.retry_mode).toBe("probe");
+    expect(fourthProbePatch.probe_attempt).toBe(4);
+    expect(fourthProbePatch.retry_backoff_ms).toBe(900_000);
+    expect(fourthProbePatch.next_retry_at).toBe("2026-04-23T00:27:00.000Z");
   });
 
   test("successful recovery clears failure counters", () => {
@@ -702,7 +756,51 @@ describe("supervisor dispatch dedupe", () => {
     expect(runtimePatch.last_failure_class).toBe("blocked_repairable");
     expect(runtimePatch.last_failure_reason).toBe("expected_file_not_changed");
     expect(runtimePatch.retry_mode).toBe("probe");
-    expect(runtimePatch.next_retry_at).toBe("2026-04-23T00:15:00.000Z");
+    expect(runtimePatch.retry_attempt).toBe(1);
+    expect(runtimePatch.probe_attempt).toBe(1);
+    expect(runtimePatch.retry_backoff_ms).toBe(0);
+    expect(runtimePatch.next_retry_at).toBe("2026-04-23T00:00:00.000Z");
+  });
+
+  test("blocked repairable probe retries run on the next tick for the first three attempts, then 15 minutes", () => {
+    const secondPatch = {};
+    applyNonRecoverableDispatchFailure({
+      runtimePatch: secondPatch,
+      dispatchKey: "step7:100:writer",
+      statusMtimeMs: 100,
+      reason: "expected_file_not_changed",
+      previousProbeAttempt: 1,
+      nowIso: "2026-04-23T00:03:00.000Z",
+    });
+    expect(secondPatch.probe_attempt).toBe(2);
+    expect(secondPatch.retry_backoff_ms).toBe(0);
+    expect(secondPatch.next_retry_at).toBe("2026-04-23T00:03:00.000Z");
+
+    const thirdPatch = {};
+    applyNonRecoverableDispatchFailure({
+      runtimePatch: thirdPatch,
+      dispatchKey: "step7:100:writer",
+      statusMtimeMs: 100,
+      reason: "expected_file_not_changed",
+      previousProbeAttempt: 2,
+      nowIso: "2026-04-23T00:06:00.000Z",
+    });
+    expect(thirdPatch.probe_attempt).toBe(3);
+    expect(thirdPatch.retry_backoff_ms).toBe(0);
+    expect(thirdPatch.next_retry_at).toBe("2026-04-23T00:06:00.000Z");
+
+    const fourthPatch = {};
+    applyNonRecoverableDispatchFailure({
+      runtimePatch: fourthPatch,
+      dispatchKey: "step7:100:writer",
+      statusMtimeMs: 100,
+      reason: "expected_file_not_changed",
+      previousProbeAttempt: 3,
+      nowIso: "2026-04-23T00:09:00.000Z",
+    });
+    expect(fourthPatch.probe_attempt).toBe(4);
+    expect(fourthPatch.retry_backoff_ms).toBe(900_000);
+    expect(fourthPatch.next_retry_at).toBe("2026-04-23T00:24:00.000Z");
   });
 
   test("repeated dispatch waits for retry window unless resume signals change", async () => {
@@ -905,6 +1003,84 @@ describe("supervisor dispatch dedupe", () => {
       expect(delivery.message).toContain("## Section Two");
       expect(delivery.message).toContain("## Appendix");
       expect(delivery.message.startsWith("## Appendix")).toBe(false);
+    } finally {
+      await stopChild(child);
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  test("core watch delivers final-output.md and appends the fixed final article menu", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "supervisor-core-final-main-"));
+    const projectDir = join(rootDir, "demo-project");
+    const activeDir = join(rootDir, "active");
+    const logPath = join(rootDir, "fake-openclaw.log");
+    const cliPath = await createFakeOpenClawCli(rootDir);
+
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(activeDir, { recursive: true });
+    await writeFile(join(activeDir, "telegram:-10001.current"), "demo-project\n", "utf8");
+    await writeFile(
+      join(projectDir, "status.md"),
+      [
+        "project_id: demo-project",
+        "status: active",
+        "workflow_mode: auto",
+        "current_step: step_8_final_article",
+        "next_actor: main",
+        "awaiting_user_choice: no",
+        "final_article_ready: yes",
+        "review_target: final",
+      ].join("\n") + "\n",
+      "utf8"
+    );
+    await writeFile(join(projectDir, "project.md"), "title: demo\n", "utf8");
+    await writeFile(join(projectDir, "final-output.md"), "# Final Title\n\nfinal body", "utf8");
+    await writeFile(join(projectDir, "draft_review_history.md"), "## old review\nverdict: approved\n", "utf8");
+
+    const child = spawn(
+      process.execPath,
+      [
+        SUPERVISOR_CORE_PATH,
+        "watch",
+        "--project-dir",
+        projectDir,
+        "--adapter",
+        SINGULARITY_ADAPTER_PATH,
+        "--poll-ms",
+        "50",
+      ],
+      {
+        cwd: join(__dirname, ".."),
+        env: {
+          ...process.env,
+          OPENCLAW_NODE: process.execPath,
+          OPENCLAW_CLI: cliPath,
+          FAKE_OPENCLAW_LOG: logPath,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      }
+    );
+
+    try {
+      await waitFor(async () => {
+        let text = "";
+        try {
+          text = await readFile(logPath, "utf8");
+        } catch {
+          return null;
+        }
+        const logEntries = parseJsonLines(text);
+        return logEntries.find((entry) => entry.kind === "message" && entry.account === "singularity-main") || null;
+      });
+
+      const logEntries = parseJsonLines(await readFile(logPath, "utf8"));
+      const delivery = logEntries.find((entry) => entry.kind === "message" && entry.account === "singularity-main");
+      expect(delivery.message).toContain("# Final Title");
+      expect(delivery.message).toContain("final body");
+      expect(delivery.message).toContain("正式稿已生成，当前仍在正式稿阶段，请确认下一步。");
+      expect(delivery.message).toContain("1. 确认文章 OK");
+      expect(delivery.message).toContain("附加命令：素材包（当前未绑定）");
+      expect(delivery.message).not.toContain("main menu");
     } finally {
       await stopChild(child);
       await rm(rootDir, { recursive: true, force: true });

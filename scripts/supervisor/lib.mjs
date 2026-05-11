@@ -5,6 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 export const DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS = 1;
 export const DEFAULT_RETRY_DELAYS_MS = [15_000, 60_000];
+export const DEFAULT_PROBE_RETRY_DELAYS_MS = [0, 0, 0];
 export const DEFAULT_PROBE_RETRY_DELAY_MS = 15 * 60_000;
 export const HISTORY_COMPACTION_THRESHOLDS = {
   draftReviewHistoryBytes: 100 * 1024,
@@ -562,12 +563,14 @@ export function applyRecoverableDispatchFailure({
   statusMtimeMs,
   maxRecoverySessionAttempts = DEFAULT_MAX_RECOVERY_SESSION_ATTEMPTS,
   retryDelaysMs = DEFAULT_RETRY_DELAYS_MS,
+  probeRetryDelaysMs = DEFAULT_PROBE_RETRY_DELAYS_MS,
   probeRetryDelayMs = DEFAULT_PROBE_RETRY_DELAY_MS,
   nowIso = new Date().toISOString(),
   reason = "",
   resumeSignals = {},
   resumeSignalPaths = [],
 }) {
+  const activeRetryDelayCount = retryDelaysMs.filter((delayMs) => Number.isFinite(Number(delayMs)) && Number(delayMs) > 0).length;
   const nextFailureCount = Number(previousFailureCount || 0) + 1;
   failureCounts[dispatchKey] = nextFailureCount;
   runtimePatch.dispatch_failure_counts = failureCounts;
@@ -580,7 +583,7 @@ export function applyRecoverableDispatchFailure({
   runtimePatch.last_dispatch_resume_signals = resumeSignals;
   runtimePatch.last_resume_signal_paths = resumeSignalPaths;
   runtimePatch.blocked_since = "";
-  runtimePatch.probe_every_ms = Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
+  delete runtimePatch.probe_attempt;
 
   const delayMs = Number(retryDelaysMs[nextFailureCount - 1]);
   if (Number.isFinite(delayMs) && delayMs > 0) {
@@ -591,7 +594,14 @@ export function applyRecoverableDispatchFailure({
     return { exhausted: false, nextFailureCount, mode: "retry", delayMs };
   }
 
+  const probeAttempt = Math.max(1, nextFailureCount - activeRetryDelayCount);
+  const stagedProbeDelayMs = Number(probeRetryDelaysMs[probeAttempt - 1]);
+  runtimePatch.probe_attempt = probeAttempt;
   runtimePatch.retry_mode = "probe";
+  runtimePatch.probe_every_ms =
+    Number.isFinite(stagedProbeDelayMs) && stagedProbeDelayMs >= 0
+      ? stagedProbeDelayMs
+      : Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
   runtimePatch.retry_backoff_ms = runtimePatch.probe_every_ms;
   runtimePatch.next_retry_at = new Date(Date.parse(nowIso) + runtimePatch.probe_every_ms).toISOString();
   runtimePatch.last_recovery_action = "entered_probe_mode_after_retryable_failure";
@@ -603,19 +613,27 @@ export function applyNonRecoverableDispatchFailure({
   dispatchKey,
   statusMtimeMs,
   reason,
+  previousProbeAttempt = 0,
+  probeRetryDelaysMs = DEFAULT_PROBE_RETRY_DELAYS_MS,
   probeRetryDelayMs = DEFAULT_PROBE_RETRY_DELAY_MS,
   nowIso = new Date().toISOString(),
   resumeSignals = {},
   resumeSignalPaths = [],
 }) {
+  const nextProbeAttempt = Number(previousProbeAttempt || 0) + 1;
+  const stagedProbeDelayMs = Number(probeRetryDelaysMs[nextProbeAttempt - 1]);
   runtimePatch.last_recovery_session_id = "";
   runtimePatch.last_dispatch_key = dispatchKey;
   runtimePatch.last_dispatch_status_mtime_ms = statusMtimeMs;
   runtimePatch.last_failure_class = "blocked_repairable";
   runtimePatch.last_failure_reason = reason || String(runtimePatch.last_error || "blocked_dispatch_failure");
   runtimePatch.retry_mode = "probe";
-  runtimePatch.retry_attempt = 0;
-  runtimePatch.probe_every_ms = Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
+  runtimePatch.retry_attempt = nextProbeAttempt;
+  runtimePatch.probe_attempt = nextProbeAttempt;
+  runtimePatch.probe_every_ms =
+    Number.isFinite(stagedProbeDelayMs) && stagedProbeDelayMs >= 0
+      ? stagedProbeDelayMs
+      : Number(probeRetryDelayMs || 0) || DEFAULT_PROBE_RETRY_DELAY_MS;
   runtimePatch.retry_backoff_ms = runtimePatch.probe_every_ms;
   runtimePatch.next_retry_at = new Date(Date.parse(nowIso) + runtimePatch.probe_every_ms).toISOString();
   runtimePatch.blocked_since = String(runtimePatch.blocked_since || nowIso);
@@ -638,6 +656,7 @@ export function clearDispatchFailure({ runtimePatch, failureCounts, dispatchKey,
   delete runtimePatch.retry_backoff_ms;
   delete runtimePatch.next_retry_at;
   delete runtimePatch.probe_every_ms;
+  delete runtimePatch.probe_attempt;
   delete runtimePatch.blocked_since;
   delete runtimePatch.last_dispatch_resume_signals;
   delete runtimePatch.last_resume_signal_paths;
