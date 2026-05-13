@@ -1,0 +1,55 @@
+name: Publish Deepflow Singularity Image
+
+on:
+  push:
+    branches:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: publish-singularity-${{ github.ref_name }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute immutable image tag
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/deepflow-singularity" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=sha-${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summarize published image
+        run: |
+          {
+            echo "Published image:"
+            echo "- \`${IMAGE_NAME}:${IMAGE_TAG}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
