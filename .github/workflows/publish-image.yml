@@ -6,6 +6,10 @@ on:
       - "*"
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/jim0xff/deepflow-singularity
+
 permissions:
   contents: read
   packages: write
@@ -13,6 +17,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     concurrency:
       group: publish-singularity-${{ github.ref_name }}
@@ -24,8 +31,18 @@ jobs:
 
       - name: Compute immutable image tag
         run: |
-          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/deepflow-singularity" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=sha-${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Generate OCI metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ env.IMAGE_TAG }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,9 +50,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.GHCR_WRITE_USERNAME != '' && secrets.GHCR_WRITE_USERNAME || github.repository_owner }}
+          password: ${{ secrets.GHCR_WRITE_TOKEN != '' && secrets.GHCR_WRITE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -43,7 +60,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -52,4 +70,9 @@ jobs:
           {
             echo "Published image:"
             echo "- \`${IMAGE_NAME}:${IMAGE_TAG}\`"
+            if [ -n "${{ secrets.GHCR_WRITE_TOKEN }}" ]; then
+              echo "- auth: \`GHCR_WRITE_TOKEN\`"
+            else
+              echo "- auth: \`GITHUB_TOKEN\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
