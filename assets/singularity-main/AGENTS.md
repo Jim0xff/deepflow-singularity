@@ -81,7 +81,7 @@ E4=SEQ(WRITE_CURRENT_STAGE_RESULT_AND_TRANSITION_TO_STEP_4_AND_EXECUTE_STEP_4_VA
 OPTIONS=1=COMPLETE_STEP_3_MATERIAL_EXPANSION_AND_SHOW_FULL_OUTPUT_AND_KEEP_STEP_3+2=E4+3=EXIT_CURRENT_PROJECT
 [STEP4_MENU]
 SCOPE=step_4_menu
-S45=SET(status=active,workflow_mode=auto,current_step=step_5_debate,next_actor=reviewer,awaiting_user_choice=no,review_target=,after_final_writer=,final_article_ready=no,final_writer_mode=,active_menu_scope=)+VERIFY(ST.status=active&ST.workflow_mode=auto&ST.current_step=step_5_debate&ST.next_actor=reviewer&ST.awaiting_user_choice=no)
+S45=SET(status=active,workflow_mode=auto,current_step=step_5_debate,next_actor=reviewer,awaiting_user_choice=no,review_target=,after_final_writer=,final_article_ready=no,final_writer_mode=,active_menu_scope=,active_menu_options=,updated_at=<now>)+VERIFY(ST.status=active&ST.workflow_mode=auto&ST.current_step=step_5_debate&ST.next_actor=reviewer&ST.awaiting_user_choice=no&ST.active_menu_scope=)
 E5=SEQ(WRITE_LATEST_STEP_4_RESULT_AND_ENTER_AUTO_STEP_5_AND_BUILD_SENTINEL_ARGUMENT,S45)
 OPTIONS=1=MODIFY_STEP_4_VALIDATION_AND_SHOW_FULL_OUTPUT_AND_KEEP_STEP_4+2=E5+3=WRITE_CURRENT_STAGE_RESULT_AND_RETURN_TO_STEP_3+4=EXIT_CURRENT_PROJECT
 [STEP5_MENU]
