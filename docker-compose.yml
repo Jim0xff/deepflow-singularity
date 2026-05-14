@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "${APP_PORT}:3000"
-      - "${VIDEO_AGENT_CALLBACK_PORT:-9000}:9000"
+      - "${HOST_VIDEO_AGENT_CALLBACK_PORT:-9000}:9000"
     env_file:
       - .env
     environment:

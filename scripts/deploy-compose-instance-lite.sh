@@ -105,6 +105,68 @@ docker_compose_cmd() {
   run_privileged docker compose "$@"
 }
 
+read_env_file_value() {
+  local file="$1"
+  local key="$2"
+
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+
+  grep -E "^${key}=" "$file" | tail -n 1 | cut -d= -f2- || true
+}
+
+upsert_env_file_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local temp_file="${file}.tmp.$$"
+
+  awk -v key="$key" -v value="$value" '
+    BEGIN { replaced = 0 }
+    index($0, key "=") == 1 {
+      if (!replaced) {
+        print key "=" value
+        replaced = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!replaced) {
+        print key "=" value
+      }
+    }
+  ' "$file" > "$temp_file"
+
+  mv "$temp_file" "$file"
+}
+
+normalize_video_agent_callback_env() {
+  local file="$1"
+  local callback_port
+  local host_callback_port
+
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+
+  callback_port="$(read_env_file_value "$file" "VIDEO_AGENT_CALLBACK_PORT")"
+  host_callback_port="$(read_env_file_value "$file" "HOST_VIDEO_AGENT_CALLBACK_PORT")"
+
+  if [[ -n "$host_callback_port" ]]; then
+    if [[ "$callback_port" != "9000" ]]; then
+      upsert_env_file_value "$file" "VIDEO_AGENT_CALLBACK_PORT" "9000"
+    fi
+    return 0
+  fi
+
+  if [[ -n "$callback_port" && "$callback_port" != "9000" ]]; then
+    upsert_env_file_value "$file" "HOST_VIDEO_AGENT_CALLBACK_PORT" "$callback_port"
+    upsert_env_file_value "$file" "VIDEO_AGENT_CALLBACK_PORT" "9000"
+  fi
+}
+
 INSTANCE="${1:-}"
 BRANCH="${2:-main}"
 
@@ -186,6 +248,8 @@ if [[ ! -f "$TARGET_ENV" ]]; then
   echo "Missing $TARGET_ENV and no matching environments.$INSTANCE block in $CONFIG_PATH" >&2
   exit 1
 fi
+
+normalize_video_agent_callback_env "$TARGET_ENV"
 
 # 轻量模式只重建并重启 deepflow-singularity 服务，不触碰其它 compose 资源。
 docker_compose_cmd -p "$INSTANCE" up -d --build --no-deps deepflow-singularity
