@@ -94,6 +94,14 @@ On Debian/Ubuntu hosts, the script now installs `git`/`curl` first if needed, au
 Deployment-complete Telegram notify is config-first: put defaults under `environments.<instance>.deploy.notify.{chat_id,account,message}` in `config.yaml`, and use `DEPLOY_NOTIFY_*` env vars only when you need to override them for a one-off deploy.
 The GitHub Actions deploy job now recreates `.env` from a temporary file before each deploy so stale ownership on old `.env` files does not block automatic redeploys.
 
+For a lighter path that updates code in-place and restarts the existing container without rebuilding the image, use:
+
+```bash
+./scripts/light-deploy-compose-instance.sh <instance> [branch]
+```
+
+This light deploy path is intended for code/asset/recipe changes only. If a diff includes `Dockerfile`, `docker-compose.yml`, `package.json`, or `package-lock.json`, the script will stop and tell you to use the full deploy script instead.
+
 For current OpenClaw builds, plan for at least `8 GB RAM` on production hosts. `4 GB` instances can start, but factory reset, workspace rebuild, plugin enablement, and gateway recovery are much more likely to hit memory pressure during deployment.
 
 ## Supervisor
