@@ -63,6 +63,13 @@ function resolveWebsiteUrl(config) {
   return config?.generateVideo?.websiteUrl || 'https://generate-video-gamma.vercel.app/';
 }
 
+function normalizeTelegramId(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  return String(value);
+}
+
 export async function handleVideoAgentFlow({
   event,
   runtimeConfig = null,
@@ -102,15 +109,18 @@ export async function handleVideoAgentFlow({
       value: handleCommand.source,
     },
   });
+  const senderId = normalizeTelegramId(event?.sender?.id);
+  const messageId = normalizeTelegramId(event?.message?.id);
+  const replyToMessageId = normalizeTelegramId(event?.message?.reply_to_message_id);
 
   const draft = await createDraft({
     script: scriptSource.loaded ? scriptSource.script : undefined,
     source: {
       platform: 'telegram',
       chat_id: handleCommand.targetChatId,
-      user_id: event?.sender?.id || null,
-      message_id: event?.message?.id || null,
-      reply_to_message_id: event?.message?.reply_to_message_id || null,
+      user_id: senderId,
+      message_id: messageId,
+      reply_to_message_id: replyToMessageId,
     },
     callback: {
       url: resolvePublicCallbackUrl(config),
@@ -132,9 +142,9 @@ export async function handleVideoAgentFlow({
     record: {
       draft_token: draft.draftToken,
       chat_id: handleCommand.targetChatId,
-      user_id: event?.sender?.id || null,
-      message_id: event?.message?.id || null,
-      reply_to_message_id: event?.message?.reply_to_message_id || null,
+      user_id: senderId,
+      message_id: messageId,
+      reply_to_message_id: replyToMessageId,
       open_url: draft.openUrl,
       requested_at: new Date().toISOString(),
       chat_type: event?.chat?.type || null,
@@ -151,7 +161,7 @@ export async function handleVideoAgentFlow({
     target: {
       account_id: config?.telegram?.accountId || 'singularity-video',
       chat_id: handleCommand.targetChatId,
-      reply_to_message_id: event?.message?.reply_to_message_id || event?.message?.id || null,
+      reply_to_message_id: replyToMessageId || messageId,
     },
     message: buildDraftCreatedMessage({
       openUrl: draft.openUrl,

@@ -201,6 +201,67 @@ test('handleVideoAgentFlow creates draft from /handle chat id handoff', async ()
   assert.match(result.message, /https:\/\/example.com\/open\/chat-id/);
 });
 
+test('handleVideoAgentFlow normalizes numeric telegram ids before draft creation', async () => {
+  const draftCalls = [];
+  const savedRecords = [];
+  const result = await handleVideoAgentFlow({
+    event: {
+      chat: {
+        id: 'openclaw-message',
+        type: 'direct',
+      },
+      sender: {
+        id: 2009,
+      },
+      message: {
+        id: 3009,
+        reply_to_message_id: 3999,
+        text: '/handle -100777 /tmp/final-script.txt',
+      },
+      mention: false,
+    },
+    runtimeConfig: {
+      generateVideo: {
+        publicCallbackUrl: 'http://host.docker.internal:9000/hooks/video-job',
+        callbackToken: 'token-1',
+      },
+      telegram: {
+        accountId: 'video-agent',
+      },
+    },
+    loadScriptSource: async ({ scriptSource }) => ({
+      loaded: true,
+      sourceType: 'file',
+      sourceValue: scriptSource.value,
+      script: '上游最终文案',
+      error: null,
+    }),
+    createDraft: async (payload) => {
+      draftCalls.push(payload);
+      return {
+        ok: true,
+        status: 200,
+        draftToken: 'draft-normalized',
+        openUrl: 'https://example.com/open/normalized',
+        expiresAt: '2026-04-13T00:00:00.000Z',
+        error: null,
+      };
+    },
+    saveDraftContext: async ({ record }) => {
+      savedRecords.push(record);
+    },
+  });
+
+  assert.equal(draftCalls[0]?.source?.user_id, '2009');
+  assert.equal(draftCalls[0]?.source?.message_id, '3009');
+  assert.equal(draftCalls[0]?.source?.reply_to_message_id, '3999');
+  assert.equal(savedRecords[0]?.user_id, '2009');
+  assert.equal(savedRecords[0]?.message_id, '3009');
+  assert.equal(savedRecords[0]?.reply_to_message_id, '3999');
+  assert.equal(result.target?.reply_to_message_id, '3999');
+  assert.match(result.message, /https:\/\/example.com\/open\/normalized/);
+});
+
 test('runVideoAgentHandleFlow sends /handle result to target chat even when event chat matches target', async () => {
   const deliveries = [];
   const result = await runVideoAgentHandleFlow({
